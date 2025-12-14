@@ -1,1 +1,1 @@
-web: python Guess_Number_Game.py
+web: gunicorn Guess_Number_Game:app
