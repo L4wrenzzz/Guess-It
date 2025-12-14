@@ -1,7 +1,9 @@
 from flask import Flask, render_template, request, session, jsonify
+from werkzeug.exceptions import HTTPException
 import random, os, time, re
 from dotenv import load_dotenv
 from supabase import create_client, Client
+from functools import wraps
 
 load_dotenv()
 
@@ -27,6 +29,21 @@ TITLES = [
     ("Legend", 5000),
     ("Champion", 10000)
 ]
+
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not session.get('username'):
+            return jsonify({'error': 'Unauthorized', 'message': 'Please login first.'}), 401
+        return f(*args, **kwargs)
+    return decorated_function
+
+@app.errorhandler(Exception)
+def handle_exception(e):
+    if isinstance(e, HTTPException):
+        return jsonify(error=e.name, message=e.description), e.code
+    print(f"Server Error: {e}")
+    return jsonify(error="Internal Server Error", message="Something went wrong on the server."), 500
 
 def save_score(username, points_to_add, won=False):
     try:
@@ -74,10 +91,6 @@ def init_session_defaults():
         session.setdefault(k, v)
 
 def check_and_forfeit():
-    """
-    Checks if a game is currently active. If so, counts it as a loss
-    before proceeding with the new action (changing difficulty, logging out, refreshing page, and start again(just in case for future)).
-    """
     if session.get('game_ready') and session.get('username'):
         save_score(session['username'], 0, won=False)
         session['game_ready'] = False
@@ -86,7 +99,6 @@ def check_and_forfeit():
 @app.route('/')
 def index():
     check_and_forfeit()
-    
     init_session_defaults()
     user_title = None
     if session.get('username'):
@@ -103,11 +115,17 @@ def index():
 
 @app.route('/api/login', methods=['POST'])
 def login():
-    data = request.json
-    username = data.get('username', '').strip()[:12]
+    if not request.is_json:
+        return jsonify({'error': 'Invalid Content-Type', 'message': 'Request must be JSON'}), 400
+        
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'Empty Payload', 'message': 'Request body cannot be empty'}), 400
+
+    username = str(data.get('username', '')).strip()[:12]
     
     if not username or not re.match("^[a-zA-Z0-9]+$", username):
-        return jsonify({'error': 'Invalid username. Only letters and numbers allowed.'}), 400
+        return jsonify({'error': 'Validation Error', 'message': 'Invalid username. Only letters and numbers allowed.'}), 400
     
     session['username'] = username
     current_title = None
@@ -122,7 +140,8 @@ def login():
             current_title = get_title(session['points'])
             if check_if_the_one(username, session['points']):
                 current_title = "THE ONE"
-    except Exception:
+    except Exception as e:
+        print(f"DB Error: {e}")
         pass
         
     return jsonify({
@@ -132,11 +151,17 @@ def login():
     })
 
 @app.route('/api/difficulty', methods=['POST'])
+@login_required
 def set_difficulty():
     check_and_forfeit()
 
-    data = request.json
-    session['difficulty'] = data.get('difficulty', 'easy')
+    data = request.get_json(silent=True) or {}
+    new_diff = data.get('difficulty', 'easy')
+    
+    if new_diff not in DIFFICULTY_SETTINGS:
+        return jsonify({'error': 'Invalid Input', 'message': 'Invalid difficulty level'}), 400
+
+    session['difficulty'] = new_diff
     settings = DIFFICULTY_SETTINGS[session['difficulty']]
     
     return jsonify({
@@ -145,10 +170,11 @@ def set_difficulty():
     })
 
 @app.route('/api/start', methods=['POST'])
+@login_required
 def start_game():
     check_and_forfeit()
 
-    settings = DIFFICULTY_SETTINGS[session['difficulty']]
+    settings = DIFFICULTY_SETTINGS[session.get('difficulty', 'easy')]
     session['random_number'] = random.randint(1, settings['max_number'])
     session['attempts'] = 0
     session['game_ready'] = True
@@ -162,14 +188,19 @@ def start_game():
     })
 
 @app.route('/api/guess', methods=['POST'])
+@login_required
 def guess():
     if not session.get('game_ready'):
-        return jsonify({'error': 'Game not started'}), 400
+        return jsonify({'error': 'State Error', 'message': 'Game not started'}), 400
+
+    data = request.get_json(silent=True)
+    if not data or 'guess' not in data:
+         return jsonify({'error': 'Missing Field', 'message': 'Guess value is required'}), 400
 
     try:
-        guess_val = int(request.json.get('guess'))
+        guess_val = int(data.get('guess'))
     except (ValueError, TypeError):
-        return jsonify({'message': "⚠️ Please enter a valid number.", 'status': 'error'})
+        return jsonify({'status': 'error', 'message': "⚠️ Please enter a valid number."}), 400
 
     settings = DIFFICULTY_SETTINGS[session['difficulty']]
     correct_num = session['random_number']
@@ -179,7 +210,7 @@ def guess():
     session['guess_history'] = history
     
     if guess_val < 1 or guess_val > settings['max_number']:
-        return jsonify({'message': f"⚠️ Number must be between 1 and {settings['max_number']}.", 'status': 'warning'})
+        return jsonify({'status': 'warning', 'message': f"⚠️ Number must be between 1 and {settings['max_number']}."})
 
     session['attempts'] += 1
     attempts_left = settings['max_attempts'] - session['attempts']
@@ -238,6 +269,7 @@ def get_leaderboard_data():
         return jsonify([])
 
 @app.route('/api/stats')
+@login_required
 def get_stats():
     pts = session.get('points', 0)
     current_title = get_title(pts)
@@ -254,7 +286,6 @@ def get_stats():
 @app.route('/logout')
 def logout():
     check_and_forfeit()
-    
     session.clear()
     return jsonify({'success': True})
 

@@ -6,6 +6,14 @@
     <link rel="icon" href="data:,">
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;800&family=Roboto+Mono:wght@500&display=swap" rel="stylesheet">
     <style>
+        .error-msg {
+            color: #ff5252;
+            font-size: 0.9em;
+            margin-top: 10px;
+            min-height: 20px;
+            font-weight: 600;
+        }
+
         :root {
             --bg-gradient: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
             --glass-bg: rgba(255, 255, 255, 0.05);
@@ -97,7 +105,6 @@
         select { 
             font-family: 'Roboto Mono', monospace; 
             font-size: 0.9em; 
-            
             text-overflow: ellipsis;
             white-space: nowrap;
             overflow: hidden;
@@ -120,6 +127,7 @@
             margin-bottom: 10px;
         }
         button:hover { transform: translateY(-3px); box-shadow: 0 10px 20px rgba(0,0,0,0.2); }
+        button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
         button.secondary { background: rgba(255,255,255,0.1); }
         
         button.quit { 
@@ -160,7 +168,6 @@
             gap: 12px;
         }
 
-        
         .player-title { 
             font-weight: 800; 
             padding: 4px 10px; 
@@ -174,7 +181,6 @@
             vertical-align: middle;
             white-space: nowrap;
         }
-        
         
         .text-Newbie { color: #b0bec5; }
         .text-Rookie { color: #4dd0e1; }
@@ -200,14 +206,12 @@
             50% { transform: scale(1.05); box-shadow: 0 0 25px #FFD700; }
         }
 
-        
         .title-THE-ONE {
             position: relative;
             background: #000;
             color: #FF5722;
             overflow: hidden;
             text-shadow: 0 0 5px #FF5722;
-            
             z-index: 0;
         }
 
@@ -216,13 +220,11 @@
             position: absolute;
             top: 50%; left: 50%;
             width: 150%; height: 500%;
-            
             background: conic-gradient(
                 transparent 70%, 
                 #FF5722 90%, 
                 #FFFF00 100%
             );
-            
             transform: translate(-50%, -50%);
             animation: rotate-snake 4s linear infinite;
             z-index: -2;
@@ -237,10 +239,7 @@
             border-radius: 2px;
         }
 
-        .title-THE-ONE span {
-            position: relative;
-            z-index: 1;
-        }
+        .title-THE-ONE span { position: relative; z-index: 1; }
 
         @keyframes rotate-snake {
             0% { transform: translate(-50%, -50%) rotate(0deg); }
@@ -264,46 +263,27 @@
         #section-titles li {
             display: grid;
             grid-template-columns: 1fr auto 1fr;
-            grid-template-columns: 1fr auto 1fr;
             align-items: center;
             gap: 15px;
-            justify-content: stretch;
         }
 
-        #section-titles li > span:first-child {
-            justify-self: end;
-        }
-        
-        #section-titles li > span:nth-child(2) {
-            justify-self: center;
-            color: #888;
-        }
-        
-        #section-titles li > :last-child {
-            justify-self: start;
-            text-align: left;
-        }
+        #section-titles li > span:first-child { justify-self: end; }
+        #section-titles li > span:nth-child(2) { justify-self: center; color: #888; }
+        #section-titles li > :last-child { justify-self: start; text-align: left; }
 
         @media (max-width: 480px) {
             .card { padding: 20px; }
             li { padding: 10px 5px; font-size: 0.9em; }
             .player-title { font-size: 0.7em; padding: 2px 6px; }
             .game-title-text { font-size: 1.5em; }
-            
-            input, select {
-                font-size: 16px !important;
-            }
-            
-            #section-titles li {
-                gap: 8px;
-            }
+            input, select { font-size: 16px !important; }
+            #section-titles li { gap: 8px; }
         }
         
         .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 20px; }
         .stat-item { background: rgba(0,0,0,0.2); padding: 15px; border-radius: 10px; }
         .stat-val { font-size: 1.5em; font-weight: bold; color: var(--accent); }
         .stat-label { font-size: 0.8em; opacity: 0.7; }
-
     </style>
 </head>
 <body>
@@ -315,7 +295,8 @@
         </div>
         <input type="text" id="username-input" placeholder="Enter Username (max 12 & no special characters)" maxlength="12" 
                oninput="this.value = this.value.replace(/[^a-zA-Z0-9]/g, '')">
-        <button onclick="handleLogin()">Play</button>
+        <button id="login-btn" onclick="handleLogin()">Play</button>
+        <p id="login-error" class="error-msg" role="alert" aria-live="assertive"></p>
     </div>
 
     <div id="main-screen" class="card fade-in {% if not username %}hidden{% endif %}">
@@ -329,7 +310,7 @@
             <button class="secondary" onclick="showSection('game')">🎮 Game</button>
             <button class="secondary" onclick="loadStats()">📊 Stats</button>
             <button class="secondary" onclick="loadLeaderboard()">🏆 Leaderboard</button>
-            <button class="secondary" onclick="showSection('titles')">🏅 Titles</button>
+            <button class="secondary" onclick="showSection('titles')">🎖️ Titles</button>
         </div>
 
         <div class="player-info-container">
@@ -357,17 +338,17 @@
             </div>
 
             <div id="start-btn-container">
-                <button onclick="startGame()">Start</button>
+                <button id="start-btn" onclick="startGame()">Start</button>
             </div>
 
             <div id="game-interface" class="hidden">
                 <div class="timer"><span id="timer">0</span>s</div>
                 <input type="number" id="guess-input" placeholder="Enter 1 to 10" onkeydown="if(event.key==='Enter') makeGuess()">
-                <button onclick="makeGuess()">Submit</button>
+                <button id="submit-guess-btn" onclick="makeGuess()">Submit</button>
                 <p class="history">History: <span id="guess-history" style="color: #fff;">-</span></p>
             </div>
 
-            <div id="message-box" class="game-message">Ready to Guess?</div>
+            <div id="message-box" class="game-message" aria-live="polite">Ready to Guess?</div>
             <img id="result-gif" src="" style="display:none; margin: 10px auto; width: 100%; max-width: 250px; border-radius: 10px; border: 2px solid rgba(255,255,255,0.2);">
         </div>
 
@@ -382,7 +363,7 @@
         </div>
         
         <div id="section-titles" class="hidden">
-            <h2>🏅 Titles System</h2>
+            <h2>🎖️ Titles System</h2>
             <ul>
                 <li>
                     <span class="player-title title-THE-ONE"><span>THE ONE</span></span> 
@@ -411,6 +392,18 @@
     let startTime;
     let currentAudio = null;
     let maxNumber = 10; 
+
+    window.addEventListener('offline', () => {
+        document.getElementById('message-box').innerText = "⚠️ No Internet Connection";
+        document.getElementById('start-btn').disabled = true;
+        document.getElementById('submit-guess-btn').disabled = true;
+    });
+
+    window.addEventListener('online', () => {
+        document.getElementById('message-box').innerText = "✅ Back Online";
+        document.getElementById('start-btn').disabled = false;
+        document.getElementById('submit-guess-btn').disabled = false;
+    });
 
     function showSection(id) {
         ['game', 'stats', 'leaderboard', 'titles'].forEach(s => {
@@ -474,29 +467,44 @@
     }
 
     async function handleLogin() {
-        const user = document.getElementById('username-input').value;
-        if(!user) return alert("Codename required.");
-
-        const res = await fetch('/api/login', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({username: user})
-        });
-        const data = await res.json();
+        if(!navigator.onLine) return alert("You are offline.");
         
-        if(res.ok) {
-            document.getElementById('display-username').innerText = user;
-            updateTitleDisplay(data.title);
+        const userInput = document.getElementById('username-input');
+        const errorMsg = document.getElementById('login-error');
+        const btn = document.getElementById('login-btn');
+        
+        const user = userInput.value;
+        if(!user) {
+            errorMsg.innerText = "Codename required.";
+            return;
+        }
+
+        btn.disabled = true;
+        errorMsg.innerText = "";
+
+        try {
+            const res = await fetch('/api/login', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({username: user})
+            });
+            const data = await res.json();
             
-            const loginScreen = document.getElementById('login-screen');
-            const mainScreen = document.getElementById('main-screen');
-            
-            loginScreen.classList.add('hidden');
-            mainScreen.classList.remove('hidden');
-            
-            playClick();
-        } else {
-            alert(data.error || "Login Failed");
+            if(res.ok) {
+                document.getElementById('display-username').innerText = user;
+                updateTitleDisplay(data.title);
+                
+                document.getElementById('login-screen').classList.add('hidden');
+                document.getElementById('main-screen').classList.remove('hidden');
+                
+                playClick();
+            } else {
+                errorMsg.innerText = data.message || "Login Failed";
+            }
+        } catch (e) {
+            errorMsg.innerText = "Connection Error";
+        } finally {
+            btn.disabled = false;
         }
     }
 
@@ -509,60 +517,85 @@
         });
         const data = await res.json();
         
-        maxNumber = data.max_number; 
-        document.getElementById('guess-input').placeholder = `Guess 1 to ${maxNumber.toLocaleString()}`;
+        if(data.max_number) {
+            maxNumber = data.max_number; 
+            document.getElementById('guess-input').placeholder = `Guess 1 to ${maxNumber.toLocaleString()}`;
+            document.getElementById('message-box').innerText = data.message;
+        }
         
-        document.getElementById('message-box').innerText = data.message;
         document.getElementById('game-interface').classList.add('hidden');
         document.getElementById('start-btn-container').classList.remove('hidden');
         document.getElementById('result-gif').style.display = 'none';
     }
 
     async function startGame() {
+        if(!navigator.onLine) return;
+
         stopLoop();
-        const res = await fetch('/api/start', {method: 'POST'});
-        const data = await res.json();
-        
-        document.getElementById('start-btn-container').classList.add('hidden');
-        document.getElementById('game-interface').classList.remove('hidden');
-        document.getElementById('message-box').innerText = data.message;
-        document.getElementById('guess-history').innerText = "";
-        document.getElementById('guess-input').value = "";
-        document.getElementById('guess-input').focus();
-        document.getElementById('result-gif').style.display = 'none';
-        
-        startTime = Date.now();
-        clearInterval(timerInterval);
-        timerInterval = setInterval(() => {
-            const seconds = Math.floor((Date.now() - startTime) / 1000);
-            document.getElementById('timer').innerText = seconds;
-        }, 1000);
-        playClick();
+        const btn = document.getElementById('start-btn');
+        btn.disabled = true;
+
+        try {
+            const res = await fetch('/api/start', {method: 'POST'});
+            const data = await res.json();
+            
+            document.getElementById('start-btn-container').classList.add('hidden');
+            document.getElementById('game-interface').classList.remove('hidden');
+            document.getElementById('message-box').innerText = data.message;
+            document.getElementById('guess-history').innerText = "";
+            document.getElementById('guess-input').value = "";
+            document.getElementById('guess-input').focus();
+            document.getElementById('result-gif').style.display = 'none';
+            
+            startTime = Date.now();
+            clearInterval(timerInterval);
+            timerInterval = setInterval(() => {
+                const seconds = Math.floor((Date.now() - startTime) / 1000);
+                document.getElementById('timer').innerText = seconds;
+            }, 1000);
+            playClick();
+        } finally {
+            btn.disabled = false;
+        }
     }
 
     async function makeGuess() {
-        const guessVal = document.getElementById('guess-input').value;
+        if(!navigator.onLine) return;
+
+        const input = document.getElementById('guess-input');
+        const btn = document.getElementById('submit-guess-btn');
+        const guessVal = input.value;
+        
         if(!guessVal) return;
 
-        const res = await fetch('/api/guess', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({guess: guessVal})
-        });
-        const data = await res.json();
+        btn.disabled = true;
+        input.disabled = true;
 
-        document.getElementById('message-box').innerText = data.message;
-        if(data.history) document.getElementById('guess-history').innerText = data.history.join(', ');
+        try {
+            const res = await fetch('/api/guess', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({guess: guessVal})
+            });
+            const data = await res.json();
 
-        if (data.status === 'win') {
-            endGame(true);
-            updateTitleDisplay(data.new_title);
-        } else if (data.status === 'lose') {
-            endGame(false);
-        } else {
-            playClick();
-            document.getElementById('guess-input').value = "";
-            document.getElementById('guess-input').focus();
+            document.getElementById('message-box').innerText = data.message;
+            if(data.history) document.getElementById('guess-history').innerText = data.history.join(', ');
+
+            if (data.status === 'win') {
+                endGame(true);
+                updateTitleDisplay(data.new_title);
+            } else if (data.status === 'lose') {
+                endGame(false);
+            } else {
+                playClick();
+                input.value = "";
+                input.focus();
+            }
+        } finally {
+            btn.disabled = false;
+            input.disabled = false;
+            input.focus();
         }
     }
 
@@ -587,6 +620,7 @@
         showSection('stats');
         const res = await fetch('/api/stats');
         const data = await res.json();
+        
         const winRate = data.total_games > 0 ? ((data.correct_guesses/data.total_games)*100).toFixed(1) : 0;
         
         document.getElementById('stats-content').innerHTML = `
@@ -618,9 +652,6 @@
                 const rankClass = player.title.replace(' ', '-');
                 textClass = 'text-' + rankClass;
                 titleHtml = `<span class="player-title title-${rankClass}"><span>${player.title}</span></span>`;
-            } else {
-                titleHtml = ''; 
-                textClass = ''; 
             }
 
             li.innerHTML = `
