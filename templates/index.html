@@ -577,6 +577,13 @@
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({guess: guessVal})
             });
+
+            if (res.status === 401) {
+                alert("Session expired! You will be redirected.");
+                window.location.reload();
+                return;
+            }
+
             const data = await res.json();
 
             document.getElementById('message-box').innerText = data.message;
