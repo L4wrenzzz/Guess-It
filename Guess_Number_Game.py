@@ -30,6 +30,8 @@ TITLES = [
     ("Champion", 10000)
 ]
 
+ACTIVE_GAMES = {}
+
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -175,7 +177,8 @@ def start_game():
     check_and_forfeit()
 
     settings = DIFFICULTY_SETTINGS[session.get('difficulty', 'easy')]
-    session['random_number'] = random.randint(1, settings['max_number'])
+    target_number = random.randint(1, settings['max_number'])
+    ACTIVE_GAMES[session['username']] = target_number
     session['attempts'] = 0
     session['game_ready'] = True
     session['start_time'] = time.time()
@@ -203,7 +206,11 @@ def guess():
         return jsonify({'status': 'error', 'message': "⚠️ Please enter a valid number."}), 400
 
     settings = DIFFICULTY_SETTINGS[session['difficulty']]
-    correct_num = session['random_number']
+    correct_num = ACTIVE_GAMES.get(session['username'])
+    
+    if correct_num is None:
+        # Safety check if server restarted or memory cleared
+        return jsonify({'error': 'Game Error', 'message': 'Game session lost. Please restart.'}), 400
     
     history = session.get('guess_history', [])
     history.append(guess_val)
