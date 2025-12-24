@@ -226,6 +226,7 @@ def guess():
         time_taken = int(time.time() - session['start_time'])
         save_score(session['username'], settings['points'], won=True)
         session['game_ready'] = False
+        ACTIVE_GAMES.pop(session['username'], None)
         
         new_title = get_title(session['points'])
         if check_if_the_one(session['username'], session['points']):
@@ -241,6 +242,7 @@ def guess():
     elif session['attempts'] >= settings['max_attempts']:
         save_score(session['username'], 0, won=False)
         session['game_ready'] = False
+        ACTIVE_GAMES.pop(session['username'], None)
         return jsonify({
             'status': 'lose',
             'message': f"❌ Game Over! The number was {correct_num}."
