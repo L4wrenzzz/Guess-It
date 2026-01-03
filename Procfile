@@ -1,1 +1,1 @@
-web: gunicorn Guess_Number_Game:app
+waitress-serve --host=127.0.0.1 --port=5000 Guess_Number_Game:app
