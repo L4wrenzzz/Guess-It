@@ -1,3 +1,6 @@
+import blackfire
+blackfire.patch_all()
+
 from flask import Flask, render_template, request, session, jsonify
 from werkzeug.exceptions import HTTPException
 import random, os, time, re
@@ -87,7 +90,8 @@ def init_session_defaults():
     defaults = {
         'points': 0, 'total_games': 0, 'correct_guesses': 0,
         'difficulty': 'easy', 'attempts': 0, 'game_ready': False,
-        'guess_history': []
+        'guess_history': [],
+        'is_the_one': False
     }
     for k, v in defaults.items():
         session.setdefault(k, v)
@@ -106,7 +110,7 @@ def index():
     if session.get('username'):
         pts = session.get('points', 0)
         user_title = get_title(pts)
-        if check_if_the_one(session.get('username'), pts):
+        if session.get('is_the_one'):
             user_title = "THE ONE"
 
     return render_template('index.html', 
@@ -140,7 +144,10 @@ def login():
             session['total_games'] = user.get('total_games', 0)
             session['correct_guesses'] = user.get('correct_guesses', 0)
             current_title = get_title(session['points'])
-            if check_if_the_one(username, session['points']):
+            
+            is_top = check_if_the_one(username, session['points'])
+            session['is_the_one'] = is_top
+            if is_top:
                 current_title = "THE ONE"
     except Exception as e:
         print(f"DB Error: {e}")
@@ -209,7 +216,6 @@ def guess():
     correct_num = ACTIVE_GAMES.get(session['username'])
     
     if correct_num is None:
-        # Safety check if server restarted or memory cleared
         return jsonify({'error': 'Game Error', 'message': 'Game session lost. Please restart.'}), 400
     
     history = session.get('guess_history', [])
@@ -229,7 +235,9 @@ def guess():
         ACTIVE_GAMES.pop(session['username'], None)
         
         new_title = get_title(session['points'])
-        if check_if_the_one(session['username'], session['points']):
+        is_top = check_if_the_one(session['username'], session['points'])
+        session['is_the_one'] = is_top
+        if is_top:
             new_title = "THE ONE"
 
         return jsonify({
@@ -282,7 +290,7 @@ def get_leaderboard_data():
 def get_stats():
     pts = session.get('points', 0)
     current_title = get_title(pts)
-    if check_if_the_one(session.get('username'), pts):
+    if session.get('is_the_one'):
         current_title = "THE ONE"
 
     return jsonify({
