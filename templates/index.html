@@ -14,8 +14,7 @@
             <img src="{{ url_for('static', filename='guessLogo.png') }}" class="logo" alt="Logo">
             <span class="game-title-text">Guess It</span>
         </div>
-        <input type="text" id="username-input" placeholder="Enter Username (max 12 & no special characters)" maxlength="12" 
-               oninput="this.value = this.value.replace(/[^a-zA-Z0-9]/g, '')">
+        <input type="text" id="username-input" placeholder="Enter Username (max 12)" maxlength="12">
         <button id="login-btn">Play</button>
         <p id="login-error" class="error-msg" role="alert" aria-live="assertive"></p>
     </div>
@@ -25,6 +24,13 @@
         <div class="header-container">
             <img src="{{ url_for('static', filename='guessLogo.png') }}" class="logo" alt="Logo">
             <span class="game-title-text">Guess It</span>
+        </div>
+
+        <div class="top-menu">
+            <button class="secondary">🎮 Game</button>
+            <button class="secondary">📊 Stats</button>
+            <button class="secondary">🏆 Leaderboard</button>
+            <button class="secondary">🎖️ Titles</button>
         </div>
 
         <div class="player-info-container">
@@ -42,7 +48,7 @@
 
         <div id="section-game">
             <div class="difficulty-select">
-                <select id="difficulty-select" onchange="setDifficulty()">
+                <select id="difficulty-select">
                     <option value="easy">     Easy (1-10)       |  3 attempts |   3 points</option>
                     <option value="medium">    Medium (1-100)     |  8 attempts |  10 points</option>
                     <option value="hard">      Hard (1-1k)        | 15 attempts |  20 points</option>
@@ -51,8 +57,14 @@
                 </select>
             </div>
 
+            <div id="start-btn-container">
+                <button id="start-btn">Start</button>
+            </div>
+
             <div id="game-interface" class="hidden">
                 <div class="timer"><span id="timer">0</span>s</div>
+                <input type="number" id="guess-input" placeholder="Enter 1 to 10">
+                <button id="submit-guess-btn">Submit</button>
                 <p class="history">History: <span id="guess-history" style="color: #fff;">-</span></p>
             </div>
 
@@ -87,6 +99,8 @@
                 {% endfor %}
             </ul>
         </div>
+
+        <button class="quit">Leave</button>
     </div>
 
     <audio id="winSound" src="{{ url_for('static', filename='win.mp3') }}"></audio>
