@@ -17,6 +17,13 @@ app = Flask(__name__)
 
 app.secret_key = os.environ.get('SECRET_KEY', 'dev-fallback-secret-key-change-me')
 
+is_prod = os.environ.get('FLASK_ENV') == 'production'
+app.config.update(
+    SESSION_COOKIE_SECURE=is_prod,
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE='Lax',
+)
+
 url: str = os.environ.get("SUPABASE_URL")
 key: str = os.environ.get("SUPABASE_KEY")
 
@@ -27,10 +34,11 @@ else:
     supabase = None
 
 def get_cipher():
+    salt = os.environ.get('CRYPTO_SALT', 'static_salt_fallback_only_for_dev').encode()
     kdf = PBKDF2HMAC(
         algorithm=hashes.SHA256(),
         length=32,
-        salt=b'static_salt_for_game_logic',
+        salt=salt,
         iterations=100000,
     )
     key = base64.urlsafe_b64encode(kdf.derive(app.secret_key.encode()))
@@ -69,21 +77,17 @@ def handle_exception(e):
 def save_score(username, points_to_add, won=False):
     if not supabase: return
     try:
-        response = supabase.table('leaderboard').select('*').eq('username', username).execute()
-        current_data = response.data[0] if response.data else {'points': 0, 'correct_guesses': 0, 'total_games': 0}
-
-        new_total = current_data['total_games'] + 1
-        new_points = current_data['points'] + points_to_add
-        new_correct = current_data['correct_guesses'] + (1 if won else 0)
-
-        supabase.table('leaderboard').upsert({
-            'username': username, 'points': new_points,
-            'correct_guesses': new_correct, 'total_games': new_total
+        supabase.rpc('update_score', {
+            'p_username': username, 
+            'p_points': points_to_add, 
+            'p_won': won
         }).execute()
         
-        session['points'] = new_points
-        session['total_games'] = new_total
-        session['correct_guesses'] = new_correct
+        session['points'] = session.get('points', 0) + points_to_add
+        session['total_games'] = session.get('total_games', 0) + 1
+        if won:
+            session['correct_guesses'] = session.get('correct_guesses', 0) + 1
+            
     except Exception as e:
         print(f"Error saving score: {e}")
 
@@ -92,7 +96,7 @@ def get_title(points):
         if points >= threshold: return title
     return None
 
-def check_if_the_one(username, points):
+def check_if_the_one(username):
     if not supabase: return False
     try:
         response = supabase.table('leaderboard').select('username').order('points', desc=True).limit(1).execute()
@@ -153,8 +157,9 @@ def login():
                 session['points'] = user.get('points', 0)
                 session['total_games'] = user.get('total_games', 0)
                 session['correct_guesses'] = user.get('correct_guesses', 0)
+
                 current_title = get_title(session['points'])
-                if check_if_the_one(username, session['points']):
+                if check_if_the_one(username):
                     session['is_the_one'] = True
                     current_title = "THE ONE"
                 else:
@@ -238,10 +243,11 @@ def guess():
     
     if guess_val == correct_num:
         time_taken = int(time.time() - session['game_start_time'])
+
         save_score(session['username'], settings['points'], won=True)
-        
+
         new_title = get_title(session['points'])
-        if check_if_the_one(session['username'], session['points']):
+        if check_if_the_one(session['username']):
             session['is_the_one'] = True
             new_title = "THE ONE"
             
