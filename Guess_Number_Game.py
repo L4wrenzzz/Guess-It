@@ -16,7 +16,6 @@ load_dotenv()
 app = Flask(__name__)
 
 app.secret_key = os.environ.get('SECRET_KEY', 'dev-fallback-secret-key-change-me')
-
 is_prod = os.environ.get('FLASK_ENV') == 'production'
 app.config.update(
     SESSION_COOKIE_SECURE=is_prod,
@@ -27,10 +26,13 @@ app.config.update(
 url: str = os.environ.get("SUPABASE_URL")
 key: str = os.environ.get("SUPABASE_KEY")
 
-if url and key:
-    supabase: Client = create_client(url, key)
-else:
-    print("WARNING: Supabase URL/KEY missing. Database features will fail.")
+try:
+    if url and key:
+        supabase: Client = create_client(url, key)
+    else:
+        supabase = None
+except Exception as e:
+    print(f"Supabase Connection Failed: {e}")
     supabase = None
 
 def get_cipher():
@@ -75,21 +77,25 @@ def handle_exception(e):
     return jsonify(error="Internal Server Error", message="Something went wrong."), 500
 
 def save_score(username, points_to_add, won=False):
-    if not supabase: return
-    try:
-        supabase.rpc('update_score', {
-            'p_username': username, 
-            'p_points': points_to_add, 
-            'p_won': won
-        }).execute()
-        
-        session['points'] = session.get('points', 0) + points_to_add
-        session['total_games'] = session.get('total_games', 0) + 1
-        if won:
-            session['correct_guesses'] = session.get('correct_guesses', 0) + 1
-            
-    except Exception as e:
-        print(f"Error saving score: {e}")
+    db_success = False
+    if supabase:
+        try:
+            supabase.rpc('update_score', {
+                'p_username': username, 
+                'p_points': points_to_add, 
+                'p_won': won
+            }).execute()
+            db_success = True
+        except Exception as e:
+            print(f"DB Save Failed (Offline Mode Active): {e}")
+
+    session['points'] = session.get('points', 0) + points_to_add
+    session['total_games'] = session.get('total_games', 0) + 1
+    if won:
+        session['correct_guesses'] = session.get('correct_guesses', 0) + 1
+    
+    if not db_success:
+        session['offline_mode'] = True
 
 def get_title(points):
     for title, threshold in reversed(TITLES):
@@ -109,7 +115,7 @@ def init_session_defaults():
     defaults = {
         'points': 0, 'total_games': 0, 'correct_guesses': 0,
         'difficulty': 'easy', 'attempts': 0, 'game_ready': False,
-        'guess_history': [], 'is_the_one': False
+        'guess_history': [], 'is_the_one': False, 'offline_mode': False
     }
     for k, v in defaults.items():
         session.setdefault(k, v)
@@ -148,7 +154,10 @@ def login():
     
     session['username'] = username
     current_title = None
-    
+    session['offline_mode'] = False
+
+
+    db_connected = False
     if supabase:
         try:
             response = supabase.table('leaderboard').select('*').eq('username', username).execute()
@@ -157,17 +166,31 @@ def login():
                 session['points'] = user.get('points', 0)
                 session['total_games'] = user.get('total_games', 0)
                 session['correct_guesses'] = user.get('correct_guesses', 0)
-
+                
                 current_title = get_title(session['points'])
                 if check_if_the_one(username):
                     session['is_the_one'] = True
                     current_title = "THE ONE"
                 else:
                     session['is_the_one'] = False
+            db_connected = True
         except Exception as e:
-            print(f"DB Error: {e}")
+            print(f"DB Error during Login: {e}")
+            db_connected = False
 
-    return jsonify({'success': True, 'points': session.get('points', 0), 'title': current_title})
+    if not db_connected:
+        session['offline_mode'] = True
+        session['points'] = 0
+        session['total_games'] = 0
+        session['correct_guesses'] = 0
+        current_title = "Newbie"
+
+    return jsonify({
+        'success': True, 
+        'points': session.get('points', 0), 
+        'title': current_title,
+        'offline': session.get('offline_mode', False)
+    })
 
 @app.route('/api/difficulty', methods=['POST'])
 @login_required
@@ -227,7 +250,6 @@ def guess():
         target_token = session['target_token']
         correct_num = int(cipher_suite.decrypt(target_token.encode()).decode())
     except Exception as e:
-        print(f"Decryption failed: {e}")
         return jsonify({'error': 'Security Error', 'message': 'Session invalid. Restart game.'}), 400
 
     settings = DIFFICULTY_SETTINGS[session['difficulty']]
@@ -243,11 +265,13 @@ def guess():
     
     if guess_val == correct_num:
         time_taken = int(time.time() - session['game_start_time'])
-
+        
         save_score(session['username'], settings['points'], won=True)
-
+        
         new_title = get_title(session['points'])
-        if check_if_the_one(session['username']):
+        if session.get('offline_mode'):
+            pass
+        elif check_if_the_one(session['username']):
             session['is_the_one'] = True
             new_title = "THE ONE"
             
@@ -278,7 +302,8 @@ def guess():
 
 @app.route('/api/leaderboard')
 def get_leaderboard_data():
-    if not supabase: return jsonify([])
+    if not supabase: 
+        return jsonify({'error': 'db_down'})
     try:
         response = supabase.table('leaderboard').select('username', 'points').order('points', desc=True).limit(100).execute()
         data = []
@@ -287,7 +312,7 @@ def get_leaderboard_data():
             data.append({'username': p['username'], 'points': p['points'], 'title': title})
         return jsonify(data)
     except Exception:
-        return jsonify([])
+        return jsonify({'error': 'db_down'})
 
 @app.route('/api/stats')
 @login_required
@@ -298,7 +323,8 @@ def get_stats():
         'points': pts,
         'total_games': session.get('total_games', 0),
         'correct_guesses': session.get('correct_guesses', 0),
-        'title': current_title
+        'title': current_title,
+        'offline': session.get('offline_mode', False)
     })
 
 @app.route('/logout')
