@@ -3,14 +3,33 @@ let startTime;
 let currentAudio = null;
 let maxNumber = 10; 
 
-// Online/Offline status listeners
+function showToast(message, type = 'info') {
+    const existing = document.querySelector('.toast-msg');
+    if (existing) existing.remove();
+
+    const toast = document.createElement('div');
+    toast.className = `toast-msg toast-${type}`;
+    toast.style.cssText = `
+        position: fixed; top: 20px; right: 20px; 
+        background: rgba(0,0,0,0.8); color: #fff; padding: 12px 24px; 
+        border-radius: 8px; z-index: 1000; animation: fadeIn 0.3s;
+        border-left: 4px solid ${type === 'error' ? '#ff5252' : '#00f260'};
+    `;
+    toast.innerText = message;
+    document.body.appendChild(toast);
+    setTimeout(() => {
+        toast.style.opacity = '0';
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
+}
+
 window.addEventListener('offline', () => {
-    document.getElementById('message-box').innerText = "⚠️ No Internet Connection";
+    showToast("⚠️ No Internet Connection", "error");
     toggleButtons(true);
 });
 
 window.addEventListener('online', () => {
-    document.getElementById('message-box').innerText = "✅ Back Online";
+    showToast("✅ Back Online", "success");
     toggleButtons(false);
 });
 
@@ -81,7 +100,7 @@ function updateTitleDisplay(title) {
 }
 
 async function handleLogin() {
-    if(!navigator.onLine) return alert("You are offline.");
+    if(!navigator.onLine) return showToast("You are offline.", "error");
     
     const userInput = document.getElementById('username-input');
     const errorMsg = document.getElementById('login-error');
@@ -94,6 +113,7 @@ async function handleLogin() {
     }
 
     btn.disabled = true;
+    btn.innerText = "Checking...";
     errorMsg.innerText = "";
 
     try {
@@ -110,32 +130,34 @@ async function handleLogin() {
             
             document.getElementById('login-screen').classList.add('hidden');
             document.getElementById('main-screen').classList.remove('hidden');
-            
             playClick();
         } else {
             errorMsg.innerText = data.message || "Login Failed";
         }
     } catch (e) {
-        errorMsg.innerText = "Connection Error";
+        showToast("Connection Error", "error");
     } finally {
         btn.disabled = false;
+        btn.innerText = "Play";
     }
 }
 
 async function setDifficulty() {
     const diff = document.getElementById('difficulty-select').value;
-    const res = await fetch('/api/difficulty', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({difficulty: diff})
-    });
-    const data = await res.json();
-    
-    if(data.max_number) {
-        maxNumber = data.max_number; 
-        document.getElementById('guess-input').placeholder = `Guess 1 to ${maxNumber.toLocaleString()}`;
-        document.getElementById('message-box').innerText = data.message;
-    }
+    try {
+        const res = await fetch('/api/difficulty', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({difficulty: diff})
+        });
+        const data = await res.json();
+        
+        if(data.max_number) {
+            maxNumber = data.max_number; 
+            document.getElementById('guess-input').placeholder = `Guess 1 to ${maxNumber.toLocaleString()}`;
+            document.getElementById('message-box').innerText = data.message;
+        }
+    } catch(e) { showToast("Error setting difficulty", "error"); }
     
     document.getElementById('game-interface').classList.add('hidden');
     document.getElementById('start-btn-container').classList.remove('hidden');
@@ -168,6 +190,8 @@ async function startGame() {
             document.getElementById('timer').innerText = seconds;
         }, 1000);
         playClick();
+    } catch (e) {
+        showToast("Failed to start game", "error");
     } finally {
         btn.disabled = false;
     }
@@ -193,12 +217,13 @@ async function makeGuess() {
         });
 
         if (res.status === 401) {
-            alert("Session expired! You will be redirected.");
-            window.location.reload();
+            showToast("Session expired!", "error");
+            setTimeout(() => window.location.reload(), 1500);
             return;
         }
 
         const data = await res.json();
+        if(data.status === 'warning') showToast(data.message, 'error');
 
         document.getElementById('message-box').innerText = data.message;
         if(data.history) document.getElementById('guess-history').innerText = data.history.join(', ');
@@ -209,10 +234,12 @@ async function makeGuess() {
         } else if (data.status === 'lose') {
             endGame(false);
         } else {
-            playClick();
+            if(data.status !== 'warning') playClick();
             input.value = "";
             input.focus();
         }
+    } catch (e) {
+        showToast("Error sending guess", "error");
     } finally {
         btn.disabled = false;
         input.disabled = false;
@@ -230,7 +257,7 @@ function endGame(won) {
     
     if(won) {
         playLoop('win'); 
-        gif.src = "/static/correct.gif"; // Assuming static route handling by Flask
+        gif.src = "/static/correct.gif"; 
     } else {
         playLoop('lose'); 
         gif.src = "/static/wrong.gif";
