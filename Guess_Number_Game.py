@@ -1,27 +1,27 @@
 import os
+import random
+import time
+import re
+import base64
+from functools import wraps
 from dotenv import load_dotenv
 
 load_dotenv()
 
-if os.environ.get('BLACKFIRE_APM_ENABLED') == '1': # Set 1 in .env to enable
+if os.environ.get('BLACKFIRE_APM_ENABLED') == '1':  # Set 1 in .env to enable
     import blackfire
     blackfire.patch_all()
 
 from flask import Flask, render_template, request, session, jsonify
 from werkzeug.exceptions import HTTPException
-import random, os, time, re, base64
-from dotenv import load_dotenv
 from supabase import create_client, Client
-from functools import wraps
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
-load_dotenv()
-
 app = Flask(__name__)
 
-app.secret_key = os.environ.get('SECRET_KEY', 'dev-fallback-secret-key-change-me')
+app.secret_key = os.environ['SECRET_KEY']
 is_prod = os.environ.get('FLASK_ENV') == 'production'
 app.config.update(
     SESSION_COOKIE_SECURE=is_prod,
@@ -29,20 +29,17 @@ app.config.update(
     SESSION_COOKIE_SAMESITE='Lax',
 )
 
-url: str = os.environ.get("SUPABASE_URL")
-key: str = os.environ.get("SUPABASE_KEY")
+url: str = os.environ["SUPABASE_URL"]
+key: str = os.environ["SUPABASE_KEY"]
 
 try:
-    if url and key:
-        supabase: Client = create_client(url, key)
-    else:
-        supabase = None
+    supabase: Client = create_client(url, key)
 except Exception as e:
     print(f"Supabase Connection Failed: {e}")
     supabase = None
 
 def get_cipher():
-    salt = os.environ.get('CRYPTO_SALT', 'static_salt_fallback_only_for_dev').encode()
+    salt = os.environ["CRYPTO_SALT"].encode()
     kdf = PBKDF2HMAC(
         algorithm=hashes.SHA256(),
         length=32,
@@ -66,6 +63,18 @@ TITLES = [
     ("Newbie", 100), ("Rookie", 500), ("Pro", 2500), 
     ("Legend", 5000), ("Champion", 10000)
 ]
+
+@app.after_request
+def add_security_headers(response):
+    response.headers['Content-Security-Policy'] = (
+        "default-src 'self'; "
+        "img-src 'self' data:; "
+        "style-src 'self' 'unsafe-inline'; "
+        "script-src 'self';" 
+    )
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    return response
 
 def login_required(f):
     @wraps(f)
