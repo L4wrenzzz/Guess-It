@@ -128,6 +128,10 @@ async function handleLogin() {
             document.getElementById('display-username').innerText = user;
             updateTitleDisplay(data.title);
             
+            if (data.offline) {
+                showToast("⚠️ Database Offline. Playing in Temporary Mode.", "error");
+            }
+
             document.getElementById('login-screen').classList.add('hidden');
             document.getElementById('main-screen').classList.remove('hidden');
             playClick();
@@ -266,12 +270,23 @@ function endGame(won) {
 
 async function loadStats() {
     showSection('stats');
+    const content = document.getElementById('stats-content');
+    content.innerHTML = "Loading...";
+
     const res = await fetch('/api/stats');
     const data = await res.json();
     
     const winRate = data.total_games > 0 ? ((data.correct_guesses/data.total_games)*100).toFixed(1) : 0;
     
-    document.getElementById('stats-content').innerHTML = `
+    let offlineWarning = "";
+    if (data.offline) {
+        offlineWarning = `<div style="color: #ff5252; margin-bottom: 15px; font-weight: bold; border: 1px solid #ff5252; padding: 10px; border-radius: 8px;">
+            ⚠️ Temporary Data (Database Offline) <br> <span style="font-size:0.8em; font-weight:normal">Data will be lost when you close the browser.</span>
+        </div>`;
+    }
+
+    content.innerHTML = `
+        ${offlineWarning}
         <div class="stats-grid">
             <div class="stat-item"><div class="stat-val">${data.points.toLocaleString()}</div><div class="stat-label">Points</div></div>
             <div class="stat-item"><div class="stat-val">${data.total_games}</div><div class="stat-label">Games</div></div>
@@ -290,6 +305,17 @@ async function loadLeaderboard() {
     const data = await res.json();
     
     list.innerHTML = "";
+    
+    if (data.error === 'db_down') {
+        list.innerHTML = `
+            <div style="color: #ff5252; padding: 20px; text-align: center;">
+                <h3>⚠️ Cannot Load</h3>
+                <p>Tell the developer to fix or make new database</p>
+            </div>
+        `;
+        return;
+    }
+
     data.forEach((player, index) => {
         const li = document.createElement('li');
         
