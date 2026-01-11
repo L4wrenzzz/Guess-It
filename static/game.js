@@ -382,7 +382,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const diffSelect = $('difficulty-select');
     if (diffSelect) diffSelect.addEventListener('change', setDifficulty);
- 
+
     const buttons = document.querySelectorAll('button.secondary');
     buttons.forEach(btn => {
         if (btn.innerText.includes('Game')) btn.addEventListener('click', () => showSection('game'));
