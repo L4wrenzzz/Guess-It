@@ -1,3 +1,5 @@
+const $ = (id) => document.getElementById(id);
+
 let timerInterval;
 let startTime;
 let currentAudio = null;
@@ -34,26 +36,34 @@ window.addEventListener('online', () => {
 });
 
 function toggleButtons(disabled) {
-    document.getElementById('start-btn').disabled = disabled;
-    document.getElementById('submit-guess-btn').disabled = disabled;
+    const startBtn = $('start-btn');
+    const submitBtn = $('submit-guess-btn');
+    
+    if (startBtn) startBtn.disabled = disabled;
+    if (submitBtn) submitBtn.disabled = disabled;
 }
 
 function showSection(id) {
     ['game', 'stats', 'leaderboard', 'titles'].forEach(s => {
-        document.getElementById('section-' + s).classList.add('hidden');
+        const el = $('section-' + s);
+        if (el) el.classList.add('hidden');
     });
-    document.getElementById('section-' + id).classList.remove('hidden');
+    const active = $('section-' + id);
+    if (active) active.classList.remove('hidden');
     playClick();
 }
 
 function playClick() {
-    const s = document.getElementById('clickSound');
-    s.currentTime = 0; s.play().catch(()=>{});
+    const s = $('clickSound');
+    if (s) {
+        s.currentTime = 0; 
+        s.play().catch(()=>{});
+    }
 }
 
 function playLoop(type) {
     stopLoop();
-    currentAudio = document.getElementById(type + 'Sound');
+    currentAudio = $(type + 'Sound');
     if(currentAudio) {
         currentAudio.loop = true;
         currentAudio.currentTime = 0;
@@ -73,8 +83,8 @@ document.addEventListener('click', () => { if(currentAudio) stopLoop(); });
 document.addEventListener('keydown', () => { if(currentAudio) stopLoop(); });
 
 function updateTitleDisplay(title) {
-    const titleEl = document.getElementById('display-title');
-    const userEl = document.getElementById('display-username');
+    const titleEl = $('display-title');
+    const userEl = $('display-username');
 
     if (!title) {
         titleEl.className = 'player-title hidden';
@@ -102,9 +112,9 @@ function updateTitleDisplay(title) {
 async function handleLogin() {
     if(!navigator.onLine) return showToast("You are offline.", "error");
     
-    const userInput = document.getElementById('username-input');
-    const errorMsg = document.getElementById('login-error');
-    const btn = document.getElementById('login-btn');
+    const userInput = $('username-input');
+    const errorMsg = $('login-error');
+    const btn = $('login-btn');
     
     const user = userInput.value;
     if(!user) {
@@ -125,15 +135,15 @@ async function handleLogin() {
         const data = await res.json();
         
         if(res.ok) {
-            document.getElementById('display-username').innerText = user;
+            $('display-username').innerText = user;
             updateTitleDisplay(data.title);
             
             if (data.offline) {
                 showToast("⚠️ Database Offline. Playing in Temporary Mode.", "error");
             }
 
-            document.getElementById('login-screen').classList.add('hidden');
-            document.getElementById('main-screen').classList.remove('hidden');
+            $('login-screen').classList.add('hidden');
+            $('main-screen').classList.remove('hidden');
             playClick();
         } else {
             errorMsg.innerText = data.message || "Login Failed";
@@ -147,7 +157,9 @@ async function handleLogin() {
 }
 
 async function setDifficulty() {
-    const diff = document.getElementById('difficulty-select').value;
+    const diffSelect = $('difficulty-select');
+    const diff = diffSelect ? diffSelect.value : 'easy';
+
     try {
         const res = await fetch('/api/difficulty', {
             method: 'POST',
@@ -158,40 +170,43 @@ async function setDifficulty() {
         
         if(data.max_number) {
             maxNumber = data.max_number; 
-            document.getElementById('guess-input').placeholder = `Guess 1 to ${maxNumber.toLocaleString()}`;
-            document.getElementById('message-box').innerText = data.message;
+            $('guess-input').placeholder = `Guess 1 to ${maxNumber.toLocaleString()}`;
+            $('message-box').innerText = data.message;
         }
     } catch(e) { showToast("Error setting difficulty", "error"); }
     
-    document.getElementById('game-interface').classList.add('hidden');
-    document.getElementById('start-btn-container').classList.remove('hidden');
-    document.getElementById('result-gif').style.display = 'none';
+    $('game-interface').classList.add('hidden');
+    $('start-btn-container').classList.remove('hidden');
+    $('result-gif').style.display = 'none';
 }
 
 async function startGame() {
     if(!navigator.onLine) return;
 
     stopLoop();
-    const btn = document.getElementById('start-btn');
+    const btn = $('start-btn');
     btn.disabled = true;
 
     try {
         const res = await fetch('/api/start', {method: 'POST'});
         const data = await res.json();
         
-        document.getElementById('start-btn-container').classList.add('hidden');
-        document.getElementById('game-interface').classList.remove('hidden');
-        document.getElementById('message-box').innerText = data.message;
-        document.getElementById('guess-history').innerText = "";
-        document.getElementById('guess-input').value = "";
-        document.getElementById('guess-input').focus();
-        document.getElementById('result-gif').style.display = 'none';
+        $('start-btn-container').classList.add('hidden');
+        $('game-interface').classList.remove('hidden');
+        $('message-box').innerText = data.message;
+        $('guess-history').innerText = "";
+        
+        const input = $('guess-input');
+        input.value = "";
+        input.focus();
+        
+        $('result-gif').style.display = 'none';
         
         startTime = Date.now();
         clearInterval(timerInterval);
         timerInterval = setInterval(() => {
             const seconds = Math.floor((Date.now() - startTime) / 1000);
-            document.getElementById('timer').innerText = seconds;
+            $('timer').innerText = seconds;
         }, 1000);
         playClick();
     } catch (e) {
@@ -204,8 +219,8 @@ async function startGame() {
 async function makeGuess() {
     if(!navigator.onLine) return;
 
-    const input = document.getElementById('guess-input');
-    const btn = document.getElementById('submit-guess-btn');
+    const input = $('guess-input');
+    const btn = $('submit-guess-btn');
     const guessVal = input.value;
     
     if(!guessVal) return;
@@ -229,8 +244,8 @@ async function makeGuess() {
         const data = await res.json();
         if(data.status === 'warning') showToast(data.message, 'error');
 
-        document.getElementById('message-box').innerText = data.message;
-        if(data.history) document.getElementById('guess-history').innerText = data.history.join(', ');
+        $('message-box').innerText = data.message;
+        if(data.history) $('guess-history').innerText = data.history.join(', ');
 
         if (data.status === 'win') {
             endGame(true);
@@ -253,10 +268,10 @@ async function makeGuess() {
 
 function endGame(won) {
     clearInterval(timerInterval);
-    document.getElementById('game-interface').classList.add('hidden');
-    document.getElementById('start-btn-container').classList.remove('hidden');
+    $('game-interface').classList.add('hidden');
+    $('start-btn-container').classList.remove('hidden');
     
-    const gif = document.getElementById('result-gif');
+    const gif = $('result-gif');
     gif.style.display = 'block';
     
     if(won) {
@@ -270,7 +285,7 @@ function endGame(won) {
 
 async function loadStats() {
     showSection('stats');
-    const content = document.getElementById('stats-content');
+    const content = $('stats-content');
     content.innerHTML = "Loading...";
 
     const res = await fetch('/api/stats');
@@ -298,7 +313,7 @@ async function loadStats() {
 
 async function loadLeaderboard() {
     showSection('leaderboard');
-    const list = document.getElementById('leaderboard-list');
+    const list = $('leaderboard-list');
     list.innerHTML = "<div style='padding:20px'>Accessing Database...</div>";
     
     const res = await fetch('/api/leaderboard');
@@ -346,3 +361,36 @@ async function handleLogout() {
     await fetch('/logout');
     location.reload();
 }
+
+document.addEventListener('DOMContentLoaded', () => {
+
+    const loginBtn = $('login-btn');
+    if (loginBtn) loginBtn.addEventListener('click', handleLogin);
+
+    const startBtn = $('start-btn');
+    if (startBtn) startBtn.addEventListener('click', startGame);
+
+    const guessInput = $('guess-input');
+    if (guessInput) {
+        guessInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') makeGuess();
+        });
+    }
+
+    const submitGuessBtn = $('submit-guess-btn');
+    if (submitGuessBtn) submitGuessBtn.addEventListener('click', makeGuess);
+
+    const diffSelect = $('difficulty-select');
+    if (diffSelect) diffSelect.addEventListener('change', setDifficulty);
+ 
+    const buttons = document.querySelectorAll('button.secondary');
+    buttons.forEach(btn => {
+        if (btn.innerText.includes('Game')) btn.addEventListener('click', () => showSection('game'));
+        if (btn.innerText.includes('Stats')) btn.addEventListener('click', loadStats);
+        if (btn.innerText.includes('Leaderboard')) btn.addEventListener('click', loadLeaderboard);
+        if (btn.innerText.includes('Titles')) btn.addEventListener('click', () => showSection('titles'));
+    });
+
+    const quitBtn = document.querySelector('button.quit');
+    if (quitBtn) quitBtn.addEventListener('click', handleLogout);
+});
