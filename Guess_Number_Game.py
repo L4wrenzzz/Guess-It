@@ -3,19 +3,40 @@ blackfire.patch_all()
 
 from flask import Flask, render_template, request, session, jsonify
 from werkzeug.exceptions import HTTPException
-import random, os, time, re
+import random, os, time, re, base64
 from dotenv import load_dotenv
 from supabase import create_client, Client
 from functools import wraps
+from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 load_dotenv()
 
 app = Flask(__name__)
-app.secret_key = os.environ.get('SECRET_KEY', os.urandom(24))
+
+app.secret_key = os.environ.get('SECRET_KEY', 'dev-fallback-secret-key-change-me')
 
 url: str = os.environ.get("SUPABASE_URL")
 key: str = os.environ.get("SUPABASE_KEY")
-supabase: Client = create_client(url, key)
+
+if url and key:
+    supabase: Client = create_client(url, key)
+else:
+    print("WARNING: Supabase URL/KEY missing. Database features will fail.")
+    supabase = None
+
+def get_cipher():
+    kdf = PBKDF2HMAC(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=b'static_salt_for_game_logic',
+        iterations=100000,
+    )
+    key = base64.urlsafe_b64encode(kdf.derive(app.secret_key.encode()))
+    return Fernet(key)
+
+cipher_suite = get_cipher()
 
 DIFFICULTY_SETTINGS = {
     'easy':       {'max_number': 10,        'max_attempts': 3,  'points': 3},
@@ -26,14 +47,9 @@ DIFFICULTY_SETTINGS = {
 }
 
 TITLES = [
-    ("Newbie", 100),
-    ("Rookie", 500),
-    ("Pro", 2500),
-    ("Legend", 5000),
-    ("Champion", 10000)
+    ("Newbie", 100), ("Rookie", 500), ("Pro", 2500), 
+    ("Legend", 5000), ("Champion", 10000)
 ]
-
-ACTIVE_GAMES = {}
 
 def login_required(f):
     @wraps(f)
@@ -48,9 +64,10 @@ def handle_exception(e):
     if isinstance(e, HTTPException):
         return jsonify(error=e.name, message=e.description), e.code
     print(f"Server Error: {e}")
-    return jsonify(error="Internal Server Error", message="Something went wrong on the server."), 500
+    return jsonify(error="Internal Server Error", message="Something went wrong."), 500
 
 def save_score(username, points_to_add, won=False):
+    if not supabase: return
     try:
         response = supabase.table('leaderboard').select('*').eq('username', username).execute()
         current_data = response.data[0] if response.data else {'points': 0, 'correct_guesses': 0, 'total_games': 0}
@@ -67,132 +84,118 @@ def save_score(username, points_to_add, won=False):
         session['points'] = new_points
         session['total_games'] = new_total
         session['correct_guesses'] = new_correct
-        
     except Exception as e:
         print(f"Error saving score: {e}")
 
 def get_title(points):
     for title, threshold in reversed(TITLES):
-        if points >= threshold:
-            return title
+        if points >= threshold: return title
     return None
 
 def check_if_the_one(username, points):
+    if not supabase: return False
     try:
         response = supabase.table('leaderboard').select('username').order('points', desc=True).limit(1).execute()
         if response.data and response.data[0]['username'] == username:
             return True
-    except:
-        pass
+    except: pass
     return False
 
 def init_session_defaults():
     defaults = {
         'points': 0, 'total_games': 0, 'correct_guesses': 0,
         'difficulty': 'easy', 'attempts': 0, 'game_ready': False,
-        'guess_history': [],
-        'is_the_one': False
+        'guess_history': [], 'is_the_one': False
     }
     for k, v in defaults.items():
         session.setdefault(k, v)
 
-def check_and_forfeit():
-    if session.get('game_ready') and session.get('username'):
-        save_score(session['username'], 0, won=False)
-        session['game_ready'] = False
-        session['attempts'] = 0
+def clear_game_state():
+    session.pop('target_token', None)
+    session.pop('game_start_time', None)
+    session['game_ready'] = False
+    session['attempts'] = 0
 
 @app.route('/')
 def index():
-    check_and_forfeit()
+    if session.get('game_ready'):
+         clear_game_state()
+         
     init_session_defaults()
     user_title = None
     if session.get('username'):
         pts = session.get('points', 0)
         user_title = get_title(pts)
-        if session.get('is_the_one'):
-            user_title = "THE ONE"
+        if session.get('is_the_one'): user_title = "THE ONE"
 
     return render_template('index.html', 
                            username=session.get('username'), 
                            user_title=user_title,
-                           titles=TITLES,
-                           diff_settings=DIFFICULTY_SETTINGS)
+                           titles=TITLES)
 
 @app.route('/api/login', methods=['POST'])
 def login():
-    if not request.is_json:
-        return jsonify({'error': 'Invalid Content-Type', 'message': 'Request must be JSON'}), 400
-        
+    if not request.is_json: return jsonify({'error': 'Invalid Content-Type'}), 400
     data = request.get_json()
-    if not data:
-        return jsonify({'error': 'Empty Payload', 'message': 'Request body cannot be empty'}), 400
-
     username = str(data.get('username', '')).strip()[:12]
     
     if not username or not re.match("^[a-zA-Z0-9]+$", username):
-        return jsonify({'error': 'Validation Error', 'message': 'Invalid username. Only letters and numbers allowed.'}), 400
+        return jsonify({'message': 'Invalid username.'}), 400
     
     session['username'] = username
     current_title = None
     
-    try:
-        response = supabase.table('leaderboard').select('*').eq('username', username).execute()
-        if response.data:
-            user = response.data[0]
-            session['points'] = user.get('points', 0)
-            session['total_games'] = user.get('total_games', 0)
-            session['correct_guesses'] = user.get('correct_guesses', 0)
-            current_title = get_title(session['points'])
-            
-            is_top = check_if_the_one(username, session['points'])
-            session['is_the_one'] = is_top
-            if is_top:
-                current_title = "THE ONE"
-    except Exception as e:
-        print(f"DB Error: {e}")
-        pass
-        
-    return jsonify({
-        'success': True,
-        'points': session.get('points', 0),
-        'title': current_title
-    })
+    if supabase:
+        try:
+            response = supabase.table('leaderboard').select('*').eq('username', username).execute()
+            if response.data:
+                user = response.data[0]
+                session['points'] = user.get('points', 0)
+                session['total_games'] = user.get('total_games', 0)
+                session['correct_guesses'] = user.get('correct_guesses', 0)
+                current_title = get_title(session['points'])
+                if check_if_the_one(username, session['points']):
+                    session['is_the_one'] = True
+                    current_title = "THE ONE"
+                else:
+                    session['is_the_one'] = False
+        except Exception as e:
+            print(f"DB Error: {e}")
+
+    return jsonify({'success': True, 'points': session.get('points', 0), 'title': current_title})
 
 @app.route('/api/difficulty', methods=['POST'])
 @login_required
 def set_difficulty():
-    check_and_forfeit()
-
+    clear_game_state()
     data = request.get_json(silent=True) or {}
     new_diff = data.get('difficulty', 'easy')
-    
     if new_diff not in DIFFICULTY_SETTINGS:
-        return jsonify({'error': 'Invalid Input', 'message': 'Invalid difficulty level'}), 400
+        return jsonify({'message': 'Invalid difficulty'}), 400
 
     session['difficulty'] = new_diff
-    settings = DIFFICULTY_SETTINGS[session['difficulty']]
-    
     return jsonify({
         'message': f"Difficulty set to {session['difficulty'].capitalize()}.",
-        'max_number': settings['max_number']
+        'max_number': DIFFICULTY_SETTINGS[session['difficulty']]['max_number']
     })
 
 @app.route('/api/start', methods=['POST'])
 @login_required
 def start_game():
-    check_and_forfeit()
-
+    clear_game_state()
     settings = DIFFICULTY_SETTINGS[session.get('difficulty', 'easy')]
     target_number = random.randint(1, settings['max_number'])
-    ACTIVE_GAMES[session['username']] = target_number
+    
+    encrypted_target = cipher_suite.encrypt(str(target_number).encode()).decode()
+    session['target_token'] = encrypted_target
+    
     session['attempts'] = 0
     session['game_ready'] = True
-    session['start_time'] = time.time()
+    session['game_start_time'] = time.time()
     session['guess_history'] = []
     
     return jsonify({
-        'message': "Game Started! Good luck.",
+        'message': "Game Started!",
         'game_ready': True,
         'max_number': settings['max_number']
     })
@@ -200,57 +203,59 @@ def start_game():
 @app.route('/api/guess', methods=['POST'])
 @login_required
 def guess():
-    if not session.get('game_ready'):
+    if not session.get('game_ready') or 'target_token' not in session:
         return jsonify({'error': 'State Error', 'message': 'Game not started'}), 400
 
-    data = request.get_json(silent=True)
-    if not data or 'guess' not in data:
-         return jsonify({'error': 'Missing Field', 'message': 'Guess value is required'}), 400
+    current_time = time.time()
+    last_guess = session.get('last_guess_time', 0)
+    if current_time - last_guess < 0.3:
+        return jsonify({'status': 'warning', 'message': "⚠️ Slow down! Too fast."})
+    session['last_guess_time'] = current_time
 
+    data = request.get_json(silent=True)
     try:
         guess_val = int(data.get('guess'))
     except (ValueError, TypeError):
-        return jsonify({'status': 'error', 'message': "⚠️ Please enter a valid number."}), 400
+        return jsonify({'status': 'error', 'message': "⚠️ Invalid number."}), 400
+
+    try:
+        target_token = session['target_token']
+        correct_num = int(cipher_suite.decrypt(target_token.encode()).decode())
+    except Exception as e:
+        print(f"Decryption failed: {e}")
+        return jsonify({'error': 'Security Error', 'message': 'Session invalid. Restart game.'}), 400
 
     settings = DIFFICULTY_SETTINGS[session['difficulty']]
-    correct_num = ACTIVE_GAMES.get(session['username'])
-    
-    if correct_num is None:
-        return jsonify({'error': 'Game Error', 'message': 'Game session lost. Please restart.'}), 400
     
     history = session.get('guess_history', [])
     history.append(guess_val)
     session['guess_history'] = history
     
     if guess_val < 1 or guess_val > settings['max_number']:
-        return jsonify({'status': 'warning', 'message': f"⚠️ Number must be between 1 and {settings['max_number']}."})
+        return jsonify({'status': 'warning', 'message': f"⚠️ Stay between 1 and {settings['max_number']}."})
 
     session['attempts'] += 1
-    attempts_left = settings['max_attempts'] - session['attempts']
     
     if guess_val == correct_num:
-        time_taken = int(time.time() - session['start_time'])
+        time_taken = int(time.time() - session['game_start_time'])
         save_score(session['username'], settings['points'], won=True)
-        session['game_ready'] = False
-        ACTIVE_GAMES.pop(session['username'], None)
         
         new_title = get_title(session['points'])
-        is_top = check_if_the_one(session['username'], session['points'])
-        session['is_the_one'] = is_top
-        if is_top:
+        if check_if_the_one(session['username'], session['points']):
+            session['is_the_one'] = True
             new_title = "THE ONE"
-
+            
+        clear_game_state()
         return jsonify({
             'status': 'win',
-            'message': f"✅ You guessed it in {time_taken}s! The number was {correct_num}.",
+            'message': f"✅ The number was {correct_num} ({time_taken}s).",
             'new_points': session['points'],
             'new_title': new_title
         })
         
     elif session['attempts'] >= settings['max_attempts']:
         save_score(session['username'], 0, won=False)
-        session['game_ready'] = False
-        ACTIVE_GAMES.pop(session['username'], None)
+        clear_game_state()
         return jsonify({
             'status': 'lose',
             'message': f"❌ Game Over! The number was {correct_num}."
@@ -261,38 +266,28 @@ def guess():
         return jsonify({
             'status': 'continue',
             'message': f"❌ Wrong. {hint}",
-            'attempts_left': attempts_left,
+            'attempts_left': settings['max_attempts'] - session['attempts'],
             'history': history
         })
 
 @app.route('/api/leaderboard')
 def get_leaderboard_data():
+    if not supabase: return jsonify([])
     try:
         response = supabase.table('leaderboard').select('username', 'points').order('points', desc=True).limit(100).execute()
         data = []
         for index, p in enumerate(response.data):
-            if index == 0:
-                title = "THE ONE"
-            else:
-                title = get_title(p['points'])
-            
-            data.append({
-                'username': p['username'],
-                'points': p['points'],
-                'title': title
-            })
+            title = "THE ONE" if index == 0 else get_title(p['points'])
+            data.append({'username': p['username'], 'points': p['points'], 'title': title})
         return jsonify(data)
-    except Exception as e:
+    except Exception:
         return jsonify([])
 
 @app.route('/api/stats')
 @login_required
 def get_stats():
     pts = session.get('points', 0)
-    current_title = get_title(pts)
-    if session.get('is_the_one'):
-        current_title = "THE ONE"
-
+    current_title = "THE ONE" if session.get('is_the_one') else get_title(pts)
     return jsonify({
         'points': pts,
         'total_games': session.get('total_games', 0),
@@ -302,7 +297,6 @@ def get_stats():
 
 @app.route('/logout')
 def logout():
-    check_and_forfeit()
     session.clear()
     return jsonify({'success': True})
 
