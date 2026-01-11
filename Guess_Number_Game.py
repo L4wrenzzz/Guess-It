@@ -1,5 +1,11 @@
-import blackfire
-blackfire.patch_all()
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+if os.environ.get('BLACKFIRE_APM_ENABLED') == '1': # Set 1 in .env to enable
+    import blackfire
+    blackfire.patch_all()
 
 from flask import Flask, render_template, request, session, jsonify
 from werkzeug.exceptions import HTTPException
