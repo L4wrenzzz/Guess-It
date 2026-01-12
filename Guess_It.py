@@ -92,10 +92,12 @@ def add_security_headers(response):
         "img-src 'self' data:; "
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " 
         "font-src 'self' https://fonts.gstatic.com; " 
-        "script-src 'self';" 
+        "script-src 'self' 'unsafe-inline'; " 
+        "frame-src 'self' https://blackfire.io;"
     )
     response.headers['X-Content-Type-Options'] = 'nosniff'
-    response.headers['X-Frame-Options'] = 'DENY'
+    
+    response.headers['X-Frame-Options'] = 'SAMEORIGIN'
     
     if request.path.startswith('/api/'):
         response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
