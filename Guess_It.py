@@ -22,9 +22,9 @@ app_logger = logging.getLogger('guess_it')
 app_logger.addHandler(file_handler)
 app_logger.setLevel(logging.INFO)
 
-if os.environ.get('BLACKFIRE_APM_ENABLED') == '1':
-    import blackfire
-    blackfire.patch_all()
+
+import blackfire
+blackfire.patch_all()
 
 from flask import Flask, render_template, request, session, jsonify
 from werkzeug.exceptions import HTTPException
