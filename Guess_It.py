@@ -3,11 +3,22 @@ import random
 import time
 import re
 import logging
+import threading
 from logging.handlers import RotatingFileHandler
 from functools import wraps
 from dotenv import load_dotenv
 
 load_dotenv()
+
+os.environ['BLACKFIRE_APM_ENABLED'] = '0' 
+
+if os.environ.get('ENABLE_BLACKFIRE') == '1':
+    try:
+        import blackfire
+        blackfire.patch_all() 
+        print("✅ Blackfire Profiler Loaded (APM Disabled)")
+    except Exception as e:
+        print(f"⚠️ Blackfire failed to load: {e}")
 
 if not os.path.exists('logs'):
     os.makedirs('logs')
@@ -22,14 +33,6 @@ app_logger = logging.getLogger('guess_it')
 app_logger.addHandler(file_handler)
 app_logger.setLevel(logging.INFO)
 
-if os.environ.get('ENABLE_BLACKFIRE') == '1':
-    try:
-        import blackfire
-        blackfire.patch_all()
-        print("✅ Blackfire Profiler Loaded")
-    except Exception as e:
-        print(f"⚠️ Blackfire failed to load: {e}")
-
 from flask import Flask, render_template, request, session, jsonify
 from werkzeug.exceptions import HTTPException
 from supabase import create_client, Client
@@ -42,7 +45,7 @@ app.secret_key = os.environ['SECRET_KEY']
 def initialize_cipher():
     key = os.environ.get('FERNET_KEY')
     if not key:
-        app_logger.warning("FERNET_KEY not found in .env. Generating temporary key (Session tokens will invalidate on restart).")
+        app_logger.warning("FERNET_KEY not found in .env. Generating temporary key.")
         return Fernet(Fernet.generate_key())
     return Fernet(key.encode())
 
@@ -68,6 +71,21 @@ def get_db():
     except Exception as e:
         app_logger.error(f"DB Connection Attempt Failed: {e}", exc_info=True)
         return None
+
+# Caching Systems 
+CACHE_TIMEOUT = 60  # seconds
+
+# Cache for "Who is the top player?" (Used in Login)
+TOP_PLAYER_CACHE = {
+    'username': None,
+    'last_updated': 0
+}
+
+# Cache for the full Leaderboard list (Used in Leaderboard tab)
+LEADERBOARD_CACHE = {
+    'data': [],
+    'last_updated': 0
+}
 
 is_prod = os.environ.get('FLASK_ENV') == 'production'
 app.config.update(
@@ -100,7 +118,6 @@ def add_security_headers(response):
         "frame-src 'self' https://blackfire.io;"
     )
     response.headers['X-Content-Type-Options'] = 'nosniff'
-    
     response.headers['X-Frame-Options'] = 'SAMEORIGIN'
     
     if request.path.startswith('/api/'):
@@ -122,14 +139,12 @@ def login_required(f):
 def handle_exception(e):
     if isinstance(e, HTTPException):
         return jsonify(error=e.name, message=e.description), e.code
-    
     app_logger.error(f"Unhandled Exception: {e}", exc_info=True)
-    
     return jsonify(error="Internal Server Error", message="Something went wrong."), 500
 
-def save_score(username, points_to_add, won=False):
+def _save_score_bg(username, points_to_add, won):
+    """Background task to save score to DB without blocking the user."""
     db = get_db()
-    db_success = False
     if db:
         try:
             db.rpc('update_score', {
@@ -137,19 +152,21 @@ def save_score(username, points_to_add, won=False):
                 'p_points': points_to_add, 
                 'p_won': won
             }).execute()
-            db_success = True
+            app_logger.info(f"Background save success for {username}")
         except Exception as e:
             app_logger.error(f"DB Save Failed for {username}: {e}", exc_info=True)
-            global _db_client
-            _db_client = None
 
+def save_score(username, points_to_add, won=False):
+    """Updates session immediately and spawns background thread for DB."""
+    # 1. Optimistic Update (Instant Feedback)
     session['points'] = session.get('points', 0) + points_to_add
     session['total_games'] = session.get('total_games', 0) + 1
     if won:
         session['correct_guesses'] = session.get('correct_guesses', 0) + 1
     
-    if not db_success:
-        session['offline_mode'] = True
+    # 2. Fire and Forget DB save
+    thread = threading.Thread(target=_save_score_bg, args=(username, points_to_add, won), daemon=True)
+    thread.start()
 
 def get_title(points):
     for title, threshold in reversed(TITLES):
@@ -157,15 +174,29 @@ def get_title(points):
     return None
 
 def check_if_the_one(username):
+    """Checks if user is #1, using cache to avoid DB hits."""
+    current_time = time.time()
+    
+    # 1. Check Cache
+    if TOP_PLAYER_CACHE['username'] and (current_time - TOP_PLAYER_CACHE['last_updated'] < CACHE_TIMEOUT):
+        return TOP_PLAYER_CACHE['username'] == username
+
+    # 2. Check DB
     db = get_db()
     if not db: return False
+    
     try:
         response = db.table('leaderboard').select('username').order('points', desc=True).limit(1).execute()
-        if response.data and response.data[0]['username'] == username:
-            return True
+        if response.data:
+            top_user = response.data[0]['username']
+            # Update Cache
+            TOP_PLAYER_CACHE['username'] = top_user
+            TOP_PLAYER_CACHE['last_updated'] = current_time
+            return top_user == username
     except Exception as e:
         app_logger.warning(f"Leaderboard check failed: {e}")
         pass
+        
     return False
 
 def init_session_defaults():
@@ -189,7 +220,7 @@ def clear_game_state():
     session.pop('game_start_time', None)
     session['game_ready'] = False
     session['attempts'] = 0
-
+    
 @app.route('/')
 def index():
     if session.get('game_ready'):
@@ -342,6 +373,7 @@ def guess():
     if guess_val == correct_num:
         time_taken = int(time.time() - session['game_start_time'])
         
+        # Async Save (Fast)
         save_score(session['username'], settings['points'], won=True)
         
         new_title = get_title(session['points'])
@@ -378,15 +410,32 @@ def guess():
 
 @app.route('/api/leaderboard')
 def get_leaderboard_data():
+    """Fetch leaderboard with 60-second caching."""
+    current_time = time.time()
+    
+    # 1. Return cached data if valid
+    if LEADERBOARD_CACHE['data'] and (current_time - LEADERBOARD_CACHE['last_updated'] < CACHE_TIMEOUT):
+        return jsonify(LEADERBOARD_CACHE['data'])
+    
+    # 2. Fetch from DB if cache expired
     db = get_db()
     if not db: 
+        # Fallback to cache even if expired if DB is down
+        if LEADERBOARD_CACHE['data']:
+            return jsonify(LEADERBOARD_CACHE['data'])
         return jsonify({'error': 'db_down'})
+    
     try:
         response = db.table('leaderboard').select('username', 'points').order('points', desc=True).limit(100).execute()
         data = []
         for index, p in enumerate(response.data):
             title = "THE ONE" if index == 0 else get_title(p['points'])
             data.append({'username': p['username'], 'points': p['points'], 'title': title})
+        
+        # 3. Update Cache
+        LEADERBOARD_CACHE['data'] = data
+        LEADERBOARD_CACHE['last_updated'] = current_time
+        
         return jsonify(data)
     except Exception as e:
         app_logger.error(f"Leaderboard fetch failed: {e}", exc_info=True)
