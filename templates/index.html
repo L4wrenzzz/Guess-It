@@ -103,6 +103,11 @@
         <button class="quit">Leave</button>
     </div>
 
+    <div id="game-config" 
+        data-correct-gif="{{ url_for('static', filename='correct.gif') }}"
+        data-wrong-gif="{{ url_for('static', filename='wrong.gif') }}">
+    </div>
+
     <audio id="winSound" src="{{ url_for('static', filename='win.mp3') }}"></audio>
     <audio id="loseSound" src="{{ url_for('static', filename='lose.mp3') }}"></audio>
     <audio id="clickSound" src="{{ url_for('static', filename='click.mp3') }}"></audio>
