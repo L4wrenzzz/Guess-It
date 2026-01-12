@@ -2,13 +2,27 @@ import os
 import random
 import time
 import re
-import base64
+import logging
+from logging.handlers import RotatingFileHandler
 from functools import wraps
 from dotenv import load_dotenv
 
 load_dotenv()
 
-if os.environ.get('BLACKFIRE_APM_ENABLED') == '1':  # Set 1 in .env to enable
+if not os.path.exists('logs'):
+    os.makedirs('logs')
+
+file_handler = RotatingFileHandler('logs/guess_it.log', maxBytes=100000, backupCount=3)
+file_handler.setFormatter(logging.Formatter(
+    '%(asctime)s %(levelname)s: %(message)s [in %(pathname)s:%(lineno)d]'
+))
+file_handler.setLevel(logging.INFO)
+
+app_logger = logging.getLogger('guess_it')
+app_logger.addHandler(file_handler)
+app_logger.setLevel(logging.INFO)
+
+if os.environ.get('BLACKFIRE_APM_ENABLED') == '1':
     import blackfire
     blackfire.patch_all()
 
@@ -16,25 +30,17 @@ from flask import Flask, render_template, request, session, jsonify
 from werkzeug.exceptions import HTTPException
 from supabase import create_client, Client
 from cryptography.fernet import Fernet
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 app = Flask(__name__)
 
 app.secret_key = os.environ['SECRET_KEY']
 
 def initialize_cipher():
-    # In production, it's best to set a fixed FERNET_KEY in .env
-    # But this derivation is safe as long as SECRET_KEY and SALT don't change.
-    salt = os.environ["CRYPTO_SALT"].encode()
-    kdf = PBKDF2HMAC(
-        algorithm=hashes.SHA256(),
-        length=32,
-        salt=salt,
-        iterations=100000,
-    )
-    key = base64.urlsafe_b64encode(kdf.derive(app.secret_key.encode()))
-    return Fernet(key)
+    key = os.environ.get('FERNET_KEY')
+    if not key:
+        app_logger.warning("FERNET_KEY not found in .env. Generating temporary key (Session tokens will invalidate on restart).")
+        return Fernet(Fernet.generate_key())
+    return Fernet(key.encode())
 
 cipher_suite = initialize_cipher()
 
@@ -49,13 +55,14 @@ def get_db():
     key = os.environ.get("SUPABASE_KEY")
     
     if not url or not key:
+        app_logger.error("Supabase credentials missing in .env")
         return None
         
     try:
         _db_client = create_client(url, key)
         return _db_client
     except Exception as e:
-        print(f"⚠️ DB Connection Attempt Failed: {e}")
+        app_logger.error(f"DB Connection Attempt Failed: {e}", exc_info=True)
         return None
 
 is_prod = os.environ.get('FLASK_ENV') == 'production'
@@ -109,7 +116,9 @@ def login_required(f):
 def handle_exception(e):
     if isinstance(e, HTTPException):
         return jsonify(error=e.name, message=e.description), e.code
-    print(f"Server Error: {e}")
+    
+    app_logger.error(f"Unhandled Exception: {e}", exc_info=True)
+    
     return jsonify(error="Internal Server Error", message="Something went wrong."), 500
 
 def save_score(username, points_to_add, won=False):
@@ -124,7 +133,7 @@ def save_score(username, points_to_add, won=False):
             }).execute()
             db_success = True
         except Exception as e:
-            print(f"DB Save Failed: {e}")
+            app_logger.error(f"DB Save Failed for {username}: {e}", exc_info=True)
             global _db_client
             _db_client = None
 
@@ -148,7 +157,9 @@ def check_if_the_one(username):
         response = db.table('leaderboard').select('username').order('points', desc=True).limit(1).execute()
         if response.data and response.data[0]['username'] == username:
             return True
-    except: pass
+    except Exception as e:
+        app_logger.warning(f"Leaderboard check failed: {e}")
+        pass
     return False
 
 def init_session_defaults():
@@ -165,7 +176,7 @@ def forfeit_if_active():
         username = session.get('username')
         if username:
             save_score(username, 0, won=False)
-            print(f"Player {username} forfeited a game.")
+            app_logger.info(f"Player {username} forfeited a game.")
 
 def clear_game_state():
     session.pop('target_token', None)
@@ -223,7 +234,7 @@ def login():
                     session['is_the_one'] = False
             db_connected = True
         except Exception as e:
-            print(f"DB Error during Login: {e}")
+            app_logger.error(f"DB Error during Login: {e}", exc_info=True)
             db_connected = False
 
     if not db_connected:
@@ -233,6 +244,8 @@ def login():
         session['correct_guesses'] = 0
         current_title = "Newbie"
 
+    app_logger.info(f"User login: {username} (Offline Mode: {session['offline_mode']})")
+    
     return jsonify({
         'success': True, 
         'points': session.get('points', 0), 
@@ -266,8 +279,12 @@ def start_game():
     settings = DIFFICULTY_SETTINGS[session.get('difficulty', 'easy')]
     target_number = random.randint(1, settings['max_number'])
     
-    encrypted_target = cipher_suite.encrypt(str(target_number).encode()).decode()
-    session['target_token'] = encrypted_target
+    try:
+        encrypted_target = cipher_suite.encrypt(str(target_number).encode()).decode()
+        session['target_token'] = encrypted_target
+    except Exception as e:
+        app_logger.critical(f"Encryption failed: {e}", exc_info=True)
+        return jsonify({'error': 'Server Error', 'message': 'Game failed to start.'}), 500
     
     session['attempts'] = 0
     session['game_ready'] = True
@@ -302,6 +319,7 @@ def guess():
         target_token = session['target_token']
         correct_num = int(cipher_suite.decrypt(target_token.encode()).decode())
     except Exception as e:
+        app_logger.error(f"Decryption failed or session invalid: {e}", exc_info=True)
         return jsonify({'error': 'Security Error', 'message': 'Session invalid. Restart game.'}), 400
 
     settings = DIFFICULTY_SETTINGS[session['difficulty']]
@@ -364,7 +382,8 @@ def get_leaderboard_data():
             title = "THE ONE" if index == 0 else get_title(p['points'])
             data.append({'username': p['username'], 'points': p['points'], 'title': title})
         return jsonify(data)
-    except Exception:
+    except Exception as e:
+        app_logger.error(f"Leaderboard fetch failed: {e}", exc_info=True)
         return jsonify({'error': 'db_down'})
 
 @app.route('/api/stats')
