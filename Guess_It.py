@@ -22,9 +22,13 @@ app_logger = logging.getLogger('guess_it')
 app_logger.addHandler(file_handler)
 app_logger.setLevel(logging.INFO)
 
-
-import blackfire
-blackfire.patch_all()
+if os.environ.get('ENABLE_BLACKFIRE') == '1':
+    try:
+        import blackfire
+        blackfire.patch_all()
+        print("✅ Blackfire Profiler Loaded")
+    except Exception as e:
+        print(f"⚠️ Blackfire failed to load: {e}")
 
 from flask import Flask, render_template, request, session, jsonify
 from werkzeug.exceptions import HTTPException
