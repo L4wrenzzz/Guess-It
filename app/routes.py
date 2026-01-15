@@ -269,7 +269,6 @@ def process_guess() -> Response:
     except Exception as e:
         current_app.logger.error(f"Decryption Error: {e}")
         return jsonify({'error': 'Server Error', 'message': 'An error occurred.'}), 500
-        return jsonify({'error': 'Security Error', 'message': 'Session invalid.'}), 400
 
     settings = GameConfig.DIFFICULTY_SETTINGS[session.get('difficulty', 'easy')]
     
