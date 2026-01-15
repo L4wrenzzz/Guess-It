@@ -38,3 +38,26 @@ def test_game_flow(client):
     data = json.loads(response.data)
     assert 'message' in data
     assert 'status' in data
+
+def test_logout(client):
+    # 1. Login first
+    client.post('/api/login', json={'username': 'TestPlayer'})
+    
+    # 2. Logout
+    response = client.get('/logout')
+    assert response.status_code == 200
+    
+    # 3. Try to access a protected route (should fail/return 401)
+    response = client.post('/api/start')
+    assert response.status_code == 401
+
+def test_change_difficulty(client):
+    client.post('/api/login', json={'username': 'TestPlayer'})
+    
+    # Change to 'hard'
+    response = client.post('/api/difficulty', json={'difficulty': 'hard'})
+    assert response.status_code == 200
+    data = response.get_json()
+    
+    # Check if the max number updated to 1000 (Hard mode)
+    assert data['max_number'] == 1000
