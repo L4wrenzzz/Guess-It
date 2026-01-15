@@ -4,3 +4,5 @@ supabase
 blackfire
 waitress
 cryptography
+flask-limiter
+redis
