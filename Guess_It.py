@@ -4,7 +4,6 @@ import time
 import re
 import logging
 import threading
-from logging.handlers import RotatingFileHandler
 from functools import wraps
 from dotenv import load_dotenv
 
@@ -20,19 +19,6 @@ if os.environ.get('ENABLE_BLACKFIRE') == '1':
     except Exception as e:
         print(f"⚠️ Blackfire failed to load: {e}")
 
-if not os.path.exists('logs'):
-    os.makedirs('logs')
-
-file_handler = RotatingFileHandler('logs/guess_it.log', maxBytes=100000, backupCount=3)
-file_handler.setFormatter(logging.Formatter(
-    '%(asctime)s %(levelname)s: %(message)s [in %(pathname)s:%(lineno)d]'
-))
-file_handler.setLevel(logging.INFO)
-
-app_logger = logging.getLogger('guess_it')
-app_logger.addHandler(file_handler)
-app_logger.setLevel(logging.INFO)
-
 from flask import Flask, render_template, request, session, jsonify
 from werkzeug.exceptions import HTTPException
 from supabase import create_client, Client
@@ -45,7 +31,7 @@ app.secret_key = os.environ['SECRET_KEY']
 def initialize_cipher():
     key = os.environ.get('FERNET_KEY')
     if not key:
-        app_logger.warning("FERNET_KEY not found in .env. Generating temporary key.")
+        app.logger.warning("FERNET_KEY not found in .env. Generating temporary key.")
         return Fernet(Fernet.generate_key())
     return Fernet(key.encode())
 
@@ -62,14 +48,14 @@ def get_db():
     key = os.environ.get("SUPABASE_KEY")
     
     if not url or not key:
-        app_logger.error("Supabase credentials missing in .env")
+        app.logger.error("Supabase credentials missing in .env")
         return None
         
     try:
         _db_client = create_client(url, key)
         return _db_client
     except Exception as e:
-        app_logger.error(f"DB Connection Attempt Failed: {e}", exc_info=True)
+        app.logger.error(f"DB Connection Attempt Failed: {e}", exc_info=True)
         return None
 
 # Caching Systems 
@@ -139,7 +125,7 @@ def login_required(f):
 def handle_exception(e):
     if isinstance(e, HTTPException):
         return jsonify(error=e.name, message=e.description), e.code
-    app_logger.error(f"Unhandled Exception: {e}", exc_info=True)
+    app.logger.error(f"Unhandled Exception: {e}", exc_info=True)
     return jsonify(error="Internal Server Error", message="Something went wrong."), 500
 
 def _save_score_bg(username, points_to_add, won):
@@ -152,9 +138,9 @@ def _save_score_bg(username, points_to_add, won):
                 'p_points': points_to_add, 
                 'p_won': won
             }).execute()
-            app_logger.info(f"Background save success for {username}")
+            app.logger.info(f"Background save success for {username}")
         except Exception as e:
-            app_logger.error(f"DB Save Failed for {username}: {e}", exc_info=True)
+            app.logger.error(f"DB Save Failed for {username}: {e}", exc_info=True)
 
 def save_score(username, points_to_add, won=False):
     """Updates session immediately and spawns background thread for DB."""
@@ -194,7 +180,7 @@ def check_if_the_one(username):
             TOP_PLAYER_CACHE['last_updated'] = current_time
             return top_user == username
     except Exception as e:
-        app_logger.warning(f"Leaderboard check failed: {e}")
+        app.logger.warning(f"Leaderboard check failed: {e}")
         pass
         
     return False
@@ -213,7 +199,7 @@ def forfeit_if_active():
         username = session.get('username')
         if username:
             save_score(username, 0, won=False)
-            app_logger.info(f"Player {username} forfeited a game.")
+            app.logger.info(f"Player {username} forfeited a game.")
 
 def clear_game_state():
     session.pop('target_token', None)
@@ -271,7 +257,7 @@ def login():
                     session['is_the_one'] = False
             db_connected = True
         except Exception as e:
-            app_logger.error(f"DB Error during Login: {e}", exc_info=True)
+            app.logger.error(f"DB Error during Login: {e}", exc_info=True)
             db_connected = False
 
     if not db_connected:
@@ -281,7 +267,7 @@ def login():
         session['correct_guesses'] = 0
         current_title = "Newbie"
 
-    app_logger.info(f"User login: {username} (Offline Mode: {session['offline_mode']})")
+    app.logger.info(f"User login: {username} (Offline Mode: {session['offline_mode']})")
     
     return jsonify({
         'success': True, 
@@ -320,7 +306,7 @@ def start_game():
         encrypted_target = cipher_suite.encrypt(str(target_number).encode()).decode()
         session['target_token'] = encrypted_target
     except Exception as e:
-        app_logger.critical(f"Encryption failed: {e}", exc_info=True)
+        app.logger.critical(f"Encryption failed: {e}", exc_info=True)
         return jsonify({'error': 'Server Error', 'message': 'Game failed to start.'}), 500
     
     session['attempts'] = 0
@@ -356,7 +342,7 @@ def guess():
         target_token = session['target_token']
         correct_num = int(cipher_suite.decrypt(target_token.encode()).decode())
     except Exception as e:
-        app_logger.error(f"Decryption failed or session invalid: {e}", exc_info=True)
+        app.logger.error(f"Decryption failed or session invalid: {e}", exc_info=True)
         return jsonify({'error': 'Security Error', 'message': 'Session invalid. Restart game.'}), 400
 
     settings = DIFFICULTY_SETTINGS[session['difficulty']]
@@ -438,7 +424,7 @@ def get_leaderboard_data():
         
         return jsonify(data)
     except Exception as e:
-        app_logger.error(f"Leaderboard fetch failed: {e}", exc_info=True)
+        app.logger.error(f"Leaderboard fetch failed: {e}", exc_info=True)
         return jsonify({'error': 'db_down'})
 
 @app.route('/api/stats')
