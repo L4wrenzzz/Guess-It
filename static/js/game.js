@@ -268,12 +268,44 @@ class GameController {
         if (quitButton) quitButton.addEventListener('click', () => this.handleLogout());
     }
 
+    async showConfirm(message) {
+        return new Promise((resolve) => {
+            const modal = document.getElementById('custom-modal');
+            const msgElem = document.getElementById('modal-message');
+            const btnConfirm = document.getElementById('modal-confirm');
+            const btnCancel = document.getElementById('modal-cancel');
+
+            // Set content
+            msgElem.innerText = message;
+            modal.classList.remove('hidden');
+
+            // Define cleanup to remove event listeners after click
+            const cleanup = () => {
+                modal.classList.add('hidden');
+                btnConfirm.replaceWith(btnConfirm.cloneNode(true));
+                btnCancel.replaceWith(btnCancel.cloneNode(true));
+            };
+
+            // Handle Confirm
+            btnConfirm.onclick = () => {
+                cleanup();
+                resolve(true); // User clicked Confirm
+            };
+
+            // Handle Cancel
+            btnCancel.onclick = () => {
+                cleanup();
+                resolve(false); // User clicked Cancel
+            };
+        });
+    }
+
     // Logic to warn user if they change difficulty mid-game (causes forfeit)
     async handleDifficultyChange() {
         const difficultySelect = this.$('difficulty-select');
         
         if (this.gameActive) {
-            const confirmed = confirm("⚠️ Warning: Changing difficulty will forfeit your current game!\n\nDo you want to proceed?");
+            const confirmed = await this.showConfirm("⚠️ Warning: Changing difficulty will forfeit your current game!\n\nDo you want to proceed?");
             if (!confirmed) {
                 const previousDifficulty = difficultySelect.getAttribute('data-prev');
                 if(previousDifficulty) difficultySelect.value = previousDifficulty;
@@ -572,7 +604,7 @@ class GameController {
     async handleLogout() {
         // This is the prompt you were looking for:
         if (this.gameActive) {
-            const confirmed = confirm("⚠️ Warning: Logging out will forfeit your current game!\n\nDo you want to proceed?");
+            const confirmed = await this.showConfirm("⚠️ Warning: Logging out will forfeit your current game!\n\nDo you want to proceed?");
             if (!confirmed) return;
             this.gameActive = false;
         }
