@@ -145,6 +145,8 @@ class UIManager {
 
     // Toggles visibility between Game, Stats, Leaderboard sections
     showSection(id) {
+        this.stopLoop(); // Stop any playing audio loops when switching sections
+
         ['game', 'stats', 'leaderboard', 'titles'].forEach(sectionId => {
             const element = this.$('section-' + sectionId);
             if (element) element.classList.add('hidden');
@@ -212,10 +214,6 @@ class GameController {
             }
         });
 
-        // Stop music if user clicks anywhere
-        document.addEventListener('click', () => { if(this.ui.currentAudio) this.ui.stopLoop(); });
-        document.addEventListener('keydown', () => { if(this.ui.currentAudio) this.ui.stopLoop(); });
-
         const loginButton = this.$('login-button');
         if (loginButton) loginButton.addEventListener('click', () => this.handleLogin());
 
@@ -274,8 +272,27 @@ class GameController {
     async handleLogin() {
         if(!navigator.onLine) return this.ui.showToast("You are offline.", "error");
         
-        const username = this.$('username-input').value;
-        if(!username) return;
+        const usernameInput = this.$('username-input');
+        const username = usernameInput.value.trim();
+        const errorText = this.$('login-error');
+
+        // 1. Check if empty
+        if (!username) {
+            errorText.innerText = "Username required!";
+            usernameInput.focus();
+            return;
+        }
+
+        // 2. Check for symbols (Allow only letters and numbers)
+        // Regex: ^ means start, [a-zA-Z0-9] means alphanumeric, + means one or more, $ means end
+        if (!/^[a-zA-Z0-9]+$/.test(username)) {
+            errorText.innerText = "Only letters and numbers are allowed!";
+            usernameInput.focus();
+            return;
+        }
+        
+        // Clear error if valid
+        errorText.innerText = "";
 
         // Visual feedback (disable button)
         this.$('login-button').disabled = true;
@@ -308,6 +325,8 @@ class GameController {
 
     // Sets the game difficulty on the server
     async setDifficulty(difficultyValue) {
+        this.ui.stopLoop(); // Stop any playing audio loops when changing difficulty
+
         const difficultySelect = this.$('difficulty-select');
         const diff = difficultyValue || (difficultySelect ? difficultySelect.value : 'easy');
     
@@ -407,6 +426,8 @@ class GameController {
         clearInterval(this.timerInterval);
         this.$('game-interface').classList.add('hidden');
         this.$('start-button-container').classList.remove('hidden');
+
+        this.$('start-button').innerText = "Try again";
         
         // Trigger Win/Lose effects
         this.ui.playLoop(won ? 'win' : 'lose');
