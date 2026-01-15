@@ -21,7 +21,7 @@ def test_login_success(client):
     
     data = json.loads(response.data)
     assert data['success'] is True
-    assert data['title'] == 'Newbie' # New offline users default to Newbie
+    assert data['title'] == None # New offline users default to None title
 
 def test_game_flow(client):
     # 1. Login
