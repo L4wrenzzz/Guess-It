@@ -1,4 +1,7 @@
--- Run this in your Supabase SQL Editor to enable atomic scoring
+-- This is an "Atomic Upsert".
+-- It handles the logic of "If user exists, update score. If not, create user."
+-- Doing this in SQL (instead of Python) prevents "Race Conditions" where two updates happen at the exact same time.
+
 create or replace function update_score(
   p_username text,
   p_points int,
