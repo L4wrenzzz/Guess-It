@@ -2,12 +2,13 @@ import time
 import random
 import re
 from functools import wraps
-from flask import Blueprint, render_template, request, session, jsonify, current_app
+from flask import Blueprint, Response, render_template, request, session, jsonify, current_app
 from flask_login import login_user, logout_user, login_required, current_user
 from app.models import User
 from app.database import get_database_client
 from app import limiter
 from app.config import GameConfig
+from cryptography.fernet import InvalidToken
 
 # Create a Blueprint. This is like a "mini-app" that holds our routes.
 # It helps keep the code organized separate from the setup code.
@@ -37,8 +38,8 @@ def _save_score_background_task(username: str, points: int, won: bool):
                 'p_points': points, 
                 'p_won': won
             }).execute()
-        except Exception as error:
-            current_app.logger.error(f"Database Save Failed for {username}: {error}")
+        except InvalidToken as error:
+            current_app.logger.error(f"[Background Task] Score Save Failed: {error}")
 
 def save_score_async(username: str, points_to_add: int, won: bool = False):
     """
@@ -52,7 +53,7 @@ def save_score_async(username: str, points_to_add: int, won: bool = False):
         session['correct_guesses'] = session.get('correct_guesses', 0) + 1
     
     current_app.task_queue.enqueue(
-        _save_score_background_task, 
+        _save_score_background_task,
         username=username, 
         points=points_to_add, 
         won=won
@@ -85,7 +86,7 @@ def check_if_user_is_the_one(username: str) -> bool:
             TOP_PLAYER_CACHE['username'] = top_user
             TOP_PLAYER_CACHE['last_updated'] = current_time
             return top_user == username
-    except Exception:
+    except InvalidToken:
         pass
     return False
 
@@ -116,7 +117,7 @@ def clear_game_state():
 # --- Routes (API Endpoints) ---
 
 @main_blueprint.after_request
-def add_security_headers(response):
+def add_security_headers(response: Response) -> Response:
     # Adds HTTP headers that tell the browser to enable security features.
     
     # We added 'frame-src' to allow Blackfire's toolbar to load.
@@ -152,7 +153,7 @@ def index_page():
     return render_template('index.html', username=session.get('username'), user_title=user_title, titles=GameConfig.TITLES)
 
 @main_blueprint.route('/api/login', methods=['POST'])
-def handle_login():
+def handle_login() -> Response:
     request_data = request.get_json() or {}
     username = str(request_data.get('username', '')).strip()[:12]
     
@@ -186,7 +187,7 @@ def handle_login():
                 current_title = None
                 session['points'] = 0
 
-        except Exception as error:
+        except InvalidToken as error:
             current_app.logger.error(f"Login Database Error: {error}")
             session['offline_mode'] = True
     else:
@@ -199,14 +200,14 @@ def handle_login():
 
     return jsonify({
         'success': True,
-        'points': session.get('points', 0), 
+        'points': session.get('points', 0),
         'title': current_title, 
         'offline': session['offline_mode']
     })
 
 @main_blueprint.route('/api/difficulty', methods=['POST'])
 @login_required
-def set_difficulty_level():
+def set_difficulty_level() -> Response:
     # Changing difficulty mid-game counts as a loss
     forfeit_game_if_active()
     clear_game_state()
@@ -225,7 +226,7 @@ def set_difficulty_level():
 
 @main_blueprint.route('/api/start', methods=['POST'])
 @login_required
-def start_game():
+def start_game() -> Response:
     forfeit_game_if_active()
     clear_game_state()
     
@@ -248,7 +249,7 @@ def start_game():
 @main_blueprint.route('/api/guess', methods=['POST'])
 @login_required
 @limiter.limit("3 per second") # Rate Limit: Only 3 guesses per second allowed
-def process_guess():
+def process_guess() -> Response:
     if not session.get('game_ready') or 'target_token' not in session:
         return jsonify({'error': 'State Error', 'message': 'Game not started'}), 400
 
@@ -262,7 +263,12 @@ def process_guess():
         # Decrypt the target number from the session
         token = session['target_token']
         correct_number = int(current_app.cipher_suite.decrypt(token.encode()).decode())
-    except Exception:
+    except InvalidToken:
+        current_app.logger.warning(f"Security Alert: Invalid Token for {session.get('username')}")
+        return jsonify({'error': 'Security Error', 'message': 'Invalid Session Token.'}), 400
+    except Exception as e:
+        current_app.logger.error(f"Decryption Error: {e}")
+        return jsonify({'error': 'Server Error', 'message': 'An error occurred.'}), 500
         return jsonify({'error': 'Security Error', 'message': 'Session invalid.'}), 400
 
     settings = GameConfig.DIFFICULTY_SETTINGS[session.get('difficulty', 'easy')]
@@ -308,7 +314,7 @@ def process_guess():
         })
 
 @main_blueprint.route('/api/leaderboard')
-def get_leaderboard_data():
+def get_leaderboard_data() -> Response:
     current_time = time.time()
     
     # Check Cache first (Server-side caching)
@@ -335,12 +341,12 @@ def get_leaderboard_data():
         LEADERBOARD_CACHE['data'] = leaderboard_data
         LEADERBOARD_CACHE['last_updated'] = current_time
         return jsonify(leaderboard_data)
-    except Exception:
+    except InvalidToken:
         return jsonify({'error': 'db_down'})
 
 @main_blueprint.route('/api/stats')
 @login_required
-def get_user_stats():
+def get_user_stats() -> Response:
     user_points = session.get('points', 0)
     current_title = "THE ONE" if session.get('is_the_one') else get_player_title(user_points)
     return jsonify({
@@ -352,7 +358,7 @@ def get_user_stats():
     })
 
 @main_blueprint.route('/logout')
-def handle_logout():
+def handle_logout() -> Response:
     # Warns the user if they are in the middle of a game
     forfeit_game_if_active()
     # Logs out the user and clears the session.
