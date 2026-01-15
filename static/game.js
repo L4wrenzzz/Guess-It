@@ -1,4 +1,9 @@
+/* Class: GameAPI
+  Purpose: Handles all network requests to the Flask server.
+  Uses 'async/await' for cleaner code than old-school Promises/Callbacks.
+*/
 class GameAPI {
+    // Sends login request
     static async login(username) {
         const res = await fetch('/api/login', {
             method: 'POST',
@@ -8,6 +13,7 @@ class GameAPI {
         return await res.json();
     }
 
+    // Sets game difficulty
     static async setDifficulty(difficulty) {
         const res = await fetch('/api/difficulty', {
             method: 'POST',
@@ -28,6 +34,7 @@ class GameAPI {
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({guess})
         });
+        // If session expired (401), reload to force login
         if (res.status === 401) {
             window.location.reload(); 
             return null;
@@ -35,6 +42,7 @@ class GameAPI {
         return await res.json();
     }
 
+    // Fetches player stats
     static async getStats() {
         const res = await fetch('/api/stats');
         return await res.json();
@@ -50,12 +58,18 @@ class GameAPI {
     }
 }
 
+/*
+  Class: UIManager
+  Purpose: Handles everything related to the visual DOM (updating text, showing divs)
+  and Audio playback. Decouples logic from display.
+*/
 class UIManager {
     constructor() {
         this.dom = {
             toast: document.querySelector('.toast-msg'),
         };
         
+        // Grab audio/gif paths from the hidden HTML config element
         const config = document.getElementById('game-config');
         this.assets = {
             win: config ? config.dataset.winSound : '',
@@ -67,14 +81,17 @@ class UIManager {
         this.currentAudio = null;
     }
 
+    // Helper jQuery-like selector
     $(id) { return document.getElementById(id); }
 
+    // Creates a temporary floating notification (Toast)
     showToast(message, type = 'info') {
         const existing = document.querySelector('.toast-msg');
         if (existing) existing.remove();
 
         const toast = document.createElement('div');
         toast.className = `toast-msg toast-${type}`;
+        // Dynamic styling for the toast
         toast.style.cssText = `
             position: fixed; top: 20px; right: 20px; 
             background: rgba(0,0,0,0.8); color: #fff; padding: 12px 24px; 
@@ -83,17 +100,20 @@ class UIManager {
         `;
         toast.innerText = message;
         document.body.appendChild(toast);
+        // Auto-remove after 3 seconds
         setTimeout(() => {
             toast.style.opacity = '0';
             setTimeout(() => toast.remove(), 300);
         }, 3000);
     }
 
+    // Plays click sound effect
     playClick() {
         const s = document.getElementById('clickSound');
         if (s) { s.currentTime = 0; s.play().catch(()=>{}); }
     }
 
+    // Plays Win/Lose music on loop
     playLoop(type) {
         this.stopLoop();
         const audioId = type + 'Sound'; 
@@ -113,12 +133,14 @@ class UIManager {
         }
     }
     
+    // Sets the result GIF based on win/loss
     setResultGif(won) {
         const gif = this.$('result-gif');
         gif.style.display = 'block';
         gif.src = won ? this.assets.correctGif : this.assets.wrongGif;
     }
 
+    // Toggles visibility between Game, Stats, Leaderboard sections
     showSection(id) {
         ['game', 'stats', 'leaderboard', 'titles'].forEach(s => {
             const el = this.$('section-' + s);
@@ -129,6 +151,7 @@ class UIManager {
         this.playClick();
     }
 
+    // Updates the colored title badge next to the username
     updateTitleDisplay(title) {
         const titleEl = this.$('display-title');
         const userEl = this.$('display-username');
@@ -141,6 +164,7 @@ class UIManager {
             return;
         }
     
+        // Show title badge
         titleEl.classList.remove('hidden');
         const formattedTitle = title.replace(' ', '-');
     
@@ -157,21 +181,27 @@ class UIManager {
     }
 }
 
+/*
+  Class: GameController
+  Purpose: The "Brain" of the frontend. Connects User Actions -> API Calls -> UI Updates.
+*/
 class GameController {
     constructor() {
         this.ui = new UIManager();
         this.timerInterval = null;
         this.startTime = null;
         this.gameActive = false;
-        this.bindEvents();
+        this.bindEvents(); // Sets up all click listeners
     }
 
     $(id) { return document.getElementById(id); }
 
     bindEvents() {
+        // Handle Internet connection loss
         window.addEventListener('offline', () => this.ui.showToast("⚠️ No Internet", "error"));
         window.addEventListener('online', () => this.ui.showToast("✅ Back Online", "success"));
         
+        // Prevent accidental closing of tab during a game
         window.addEventListener('beforeunload', (e) => {
             if (this.gameActive) {
                 e.preventDefault();
@@ -179,6 +209,7 @@ class GameController {
             }
         });
 
+        // Stop music if user clicks anywhere
         document.addEventListener('click', () => { if(this.ui.currentAudio) this.ui.stopLoop(); });
         document.addEventListener('keydown', () => { if(this.ui.currentAudio) this.ui.stopLoop(); });
 
@@ -191,6 +222,7 @@ class GameController {
         const submitBtn = this.$('submit-guess-btn');
         if (submitBtn) submitBtn.addEventListener('click', () => this.makeGuess());
 
+        // Allow pressing "Enter" to submit guess
         const guessInput = this.$('guess-input');
         if (guessInput) {
             guessInput.addEventListener('keydown', (e) => {
@@ -198,14 +230,17 @@ class GameController {
             });
         }
         
+        // Difficulty selector logic
         const diffSelect = this.$('difficulty-select');
         if (diffSelect) {
+            // Save previous value in case user cancels change
             diffSelect.addEventListener('focus', () => {
                 diffSelect.setAttribute('data-prev', diffSelect.value);
             });
             diffSelect.addEventListener('change', () => this.handleDifficultyChange());
         }
 
+        // Navigation Menu Logic
         const buttons = document.querySelectorAll('button.secondary');
         buttons.forEach(btn => {
             if (btn.innerText.includes('Game')) btn.addEventListener('click', () => this.ui.showSection('game'));
@@ -218,6 +253,7 @@ class GameController {
         if (quitBtn) quitBtn.addEventListener('click', () => this.handleLogout());
     }
 
+    // Logic to warn user if they change difficulty mid-game (causes forfeit)
     async handleDifficultyChange() {
         const diffSelect = this.$('difficulty-select');
         
@@ -238,6 +274,7 @@ class GameController {
         const username = this.$('username-input').value;
         if(!username) return;
 
+        // Visual feedback (disable button)
         this.$('login-btn').disabled = true;
         this.$('login-btn').innerText = "Checking...";
         
@@ -251,6 +288,7 @@ class GameController {
                     this.ui.showToast("⚠️ Database Offline. Playing in Temporary Mode.", "error");
                 }
 
+                // Switch screens
                 this.$('login-screen').classList.add('hidden');
                 this.$('main-screen').classList.remove('hidden');
                 this.ui.playClick();
@@ -265,6 +303,7 @@ class GameController {
         }
     }
 
+    // Sets the game difficulty on the server
     async setDifficulty(difficultyValue) {
         const diffSelect = this.$('difficulty-select');
         const diff = difficultyValue || (diffSelect ? diffSelect.value : 'easy');
@@ -285,6 +324,7 @@ class GameController {
 
         } catch(e) { this.ui.showToast("Error setting difficulty", "error"); }
         
+        // Reset UI to "Start" state
         this.$('game-interface').classList.add('hidden');
         this.$('start-btn-container').classList.remove('hidden');
         this.$('result-gif').style.display = 'none';
@@ -296,6 +336,7 @@ class GameController {
 
         try {
             const data = await GameAPI.startGame();
+            // Swap "Start" button for "Game Interface"
             this.$('start-btn-container').classList.add('hidden');
             this.$('game-interface').classList.remove('hidden');
             this.$('message-box').innerText = data.message;
@@ -304,6 +345,7 @@ class GameController {
             this.$('guess-input').focus();
             this.$('result-gif').style.display = 'none';
 
+            // Start the client-side timer (for visual effect only)
             this.startTime = Date.now();
             clearInterval(this.timerInterval);
             this.timerInterval = setInterval(() => {
@@ -314,6 +356,7 @@ class GameController {
             
             this.gameActive = true;
 
+        // Error starting game
         } catch (e) {
             this.ui.showToast("Failed to start", "error");
         } finally {
@@ -321,6 +364,7 @@ class GameController {
         }
     }
 
+    // Handles submitting a guess to the server
     async makeGuess() {
         const input = this.$('guess-input');
         const val = input.value;
@@ -343,6 +387,7 @@ class GameController {
             } else if (data.status === 'lose') {
                 this.endGame(false);
             } else {
+                // Game Continues
                 input.value = "";
                 input.focus();
                 if(data.status !== 'warning') this.ui.playClick();
@@ -360,12 +405,14 @@ class GameController {
         this.$('game-interface').classList.add('hidden');
         this.$('start-btn-container').classList.remove('hidden');
         
+        // Trigger Win/Lose effects
         this.ui.playLoop(won ? 'win' : 'lose');
         this.ui.setResultGif(won);
         
         this.gameActive = false;
     }
 
+    // Fetches and displays player stats
     async loadStats() {
         this.ui.showSection('stats');
         const content = this.$('stats-content');
@@ -393,6 +440,7 @@ class GameController {
         `;
     }
 
+    // Fetches and displays the global leaderboard
     async loadLeaderboard() {
         this.ui.showSection('leaderboard');
         const list = this.$('leaderboard-list');
@@ -412,6 +460,7 @@ class GameController {
             return;
         }
     
+        // Populate leaderboard entries
         data.forEach((player, index) => {
             const li = document.createElement('li');
             let titleHtml = '';
@@ -437,6 +486,7 @@ class GameController {
         });
     }
 
+    // Handles user logout, with game forfeit warning
     async handleLogout() {
         if (this.gameActive) {
             const confirmed = confirm("⚠️ Warning: Logging out will forfeit your current game!\n\nDo you want to proceed?");
@@ -444,10 +494,11 @@ class GameController {
             this.gameActive = false;
         }
         await GameAPI.logout();
-        location.reload();
+        location.reload(); // Refresh page to return to login screen
     }
 }
 
+// Start the app when the DOM is fully loaded
 document.addEventListener('DOMContentLoaded', () => {
     new GameController();
 });

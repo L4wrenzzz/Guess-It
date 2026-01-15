@@ -1,3 +1,4 @@
+/* Helper class for error messages */
 .error-msg {
     color: #ff5252;
     font-size: 0.9em;
@@ -6,6 +7,7 @@
     font-weight: 600;
 }
 
+/* CSS Variables (Custom Properties) make color changes easy */
 :root {
     --bg-gradient: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
     --glass-bg: rgba(255, 255, 255, 0.05);
@@ -21,30 +23,32 @@ body {
     margin: 0;
     font-family: var(--font);
     background: var(--bg-gradient);
-    background-attachment: fixed;
+    background-attachment: fixed; /* Background stays still when scrolling */
     color: var(--text);
     min-height: 100vh;
-    display: flex;
+    display: flex;        /* Centering content vertically & horizontally */
     align-items: center;
     justify-content: center;
 }
 
+/* Animations */
 .fade-in { animation: fadeIn 0.4s ease-in-out; }
 @keyframes fadeIn {
     from { opacity: 0; transform: translateY(10px); }
     to { opacity: 1; transform: translateY(0); }
 }
 
+/* GLASSMORPHISM CARD STYLE */
 .card {
     background: var(--glass-bg);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(16px);       /* The magic property that blurs the background behind the card */
+    -webkit-backdrop-filter: blur(16px); /* Safari support */
     border: 1px solid var(--glass-border);
     padding: 40px;
     border-radius: 24px;
     max-width: 600px;
     width: 90%;
-    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37); /* Soft shadow */
     text-align: center;
     transition: all 0.3s ease;
 }
@@ -57,9 +61,12 @@ body {
     margin-bottom: 25px;
 }
 .logo { width: 80px; height: auto; display: block; }
+
+/* SHINY TEXT EFFECT for the title */
 .game-title-text {
     font-size: 2em;
     font-weight: 800;
+    /* Gradient text clipping */
     background: linear-gradient(to right, #fff 0%, #aaa 100%);
     -webkit-background-clip: text;
     background-clip: text;
@@ -67,11 +74,13 @@ body {
     text-transform: uppercase;
     letter-spacing: 1px;
     position: relative;
+    /* Moving shine animation */
     background-image: linear-gradient(to right, #fff 0%, #aaa 40%, #ffffff 50%, #aaa 60%, #fff 100%);
     background-size: 200% auto;
     animation: shine 3s linear infinite;
 }
 
+/* Shine animation keyframes */
 @keyframes shine {
     0% { background-position: -200% center; }
     40% { background-position: 200% center; }
@@ -80,11 +89,12 @@ body {
 
 h2 { border-bottom: 1px solid var(--glass-border); padding-bottom: 10px; margin-bottom: 20px; }
 
+/* Form inputs styling */
 input, select {
     padding: 15px;
     border-radius: 12px;
     border: 1px solid var(--glass-border);
-    background: #16213e; 
+    background: rgba(22, 33, 62, 0.8);
     color: #fff;
     width: 100%;
     box-sizing: border-box;
@@ -94,6 +104,7 @@ input, select {
     transition: 0.3s;
 }
 
+/* Truncate long text in select dropdowns */
 select { 
     font-family: 'Roboto Mono', monospace; 
     font-size: 0.9em; 
@@ -102,9 +113,10 @@ select {
     overflow: hidden;
 }
 
-option { background-color: #16213e; color: #fff; }
+option { background-color: rgba(22, 33, 62, 0.8); color: #fff; }
 input:focus { border-color: var(--accent); }
 
+/* Buttons with hover effects */
 button {
     padding: 15px;
     border-radius: 12px;
@@ -120,7 +132,7 @@ button {
 }
 button:hover { transform: translateY(-3px); box-shadow: 0 10px 20px rgba(0,0,0,0.2); }
 button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
-button.secondary { background: rgba(255,255,255,0.1); }
+button.secondary { background: rgba(255,255,255,0.1); } /* Transparent buttons */
 
 button.quit { 
     background: linear-gradient(to right, #cb2d3e, #ef473a); 
@@ -131,8 +143,10 @@ button.quit {
     margin-top: 15px;
 }
 
+/* Utility to hide elements */
 .hidden { display: none !important; }
 
+/* Grid layout for the menu buttons */
 .top-menu { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 25px; }
 .top-menu button { width: 100%; margin: 0; font-size: 14px; padding: 10px; }
 
@@ -151,6 +165,7 @@ button.quit {
 .timer { font-size: 2em; font-weight: 800; color: #ff5252; margin: 10px 0; text-shadow: 0 0 10px rgba(255, 82, 82, 0.5); }
 .history { font-size: 0.9em; color: #ccc; letter-spacing: 1px; }
 
+/* Player Rank Styling */
 .player-info-container {
     margin-bottom: 15px; 
     font-size: 1.1em;
@@ -174,6 +189,7 @@ button.quit {
     white-space: nowrap;
 }
 
+/* Colors for specific titles */
 .text-Newbie { color: #b0bec5; }
 .text-Rookie { color: #4dd0e1; }
 .text-Pro { color: #ffca28; }
@@ -190,7 +206,7 @@ button.quit {
     background: linear-gradient(45deg, #FFD700, #ff8c00); 
     color: #000; 
     box-shadow: 0 0 15px #FFD700; 
-    animation: breathe 3s ease-in-out infinite; 
+    animation: breathe 3s ease-in-out infinite; /* Pulsing effect */
     border: 1px solid #fff;
 }
 @keyframes breathe {
@@ -198,6 +214,7 @@ button.quit {
     50% { transform: scale(1.05); box-shadow: 0 0 25px #FFD700; }
 }
 
+/* Special effects for "THE ONE" title */
 .title-THE-ONE {
     position: relative;
     background: #000;
@@ -207,6 +224,7 @@ button.quit {
     z-index: 0;
 }
 
+/* The spinning rainbow border effect for "THE ONE" title */
 .title-THE-ONE::before {
     content: '';
     position: absolute;
@@ -222,6 +240,7 @@ button.quit {
     z-index: -2;
 }
 
+/* Inner black cover to make the border look thin */
 .title-THE-ONE::after {
     content: '';
     position: absolute;
@@ -240,6 +259,7 @@ button.quit {
 
 @keyframes glow-purple { from { box-shadow: 0 0 5px #9c27b0; } to { box-shadow: 0 0 15px #e040fb; } }
 
+/* Leaderboard List */
 ul { list-style: none; padding: 0; margin: 0; max-height: 300px; overflow-y: auto; }
 
 li { 
@@ -263,6 +283,7 @@ li:last-child { border: none; }
 #section-titles li > span:nth-child(2) { justify-self: center; color: #888; }
 #section-titles li > :last-child { justify-self: start; text-align: left; }
 
+/* Mobile Responsiveness */
 @media (max-width: 480px) {
     .card { padding: 20px; }
     li { padding: 10px 5px; font-size: 0.9em; }
@@ -272,6 +293,7 @@ li:last-child { border: none; }
     #section-titles li { gap: 8px; }
 }
 
+/* Stats Grid Layout */
 .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 20px; }
 .stat-item { background: rgba(0,0,0,0.2); padding: 15px; border-radius: 10px; }
 .stat-val { font-size: 1.5em; font-weight: bold; color: var(--accent); }
