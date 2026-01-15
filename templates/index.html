@@ -11,7 +11,7 @@
 
     <div id="login-screen" class="card fade-in {% if username %}hidden{% endif %}">
         <div class="header-container">
-            <img src="{{ url_for('static', filename='guessLogo.png') }}" class="logo" alt="Logo">
+            <img src="{{ url_for('static', filename='guessItLogo.png') }}" class="logo" alt="Logo">
             <span class="game-title-text">Guess It</span>
         </div>
         <input type="text" id="username-input" placeholder="Enter Username (max 12)" maxlength="12">
@@ -22,7 +22,7 @@
     <div id="main-screen" class="card fade-in {% if not username %}hidden{% endif %}">
         
         <div class="header-container">
-            <img src="{{ url_for('static', filename='guessLogo.png') }}" class="logo" alt="Logo">
+            <img src="{{ url_for('static', filename='guessItLogo.png') }}" class="logo" alt="Logo">
             <span class="game-title-text">Guess It</span>
         </div>
 
@@ -103,13 +103,8 @@
         <button class="quit">Leave</button>
     </div>
 
-    <div id="game-config" 
-        data-correct-gif="{{ url_for('static', filename='correct.gif') }}"
-        data-wrong-gif="{{ url_for('static', filename='wrong.gif') }}">
-    </div>
-
-    <audio id="winSound" src="{{ url_for('static', filename='win.mp3') }}"></audio>
-    <audio id="loseSound" src="{{ url_for('static', filename='lose.mp3') }}"></audio>
+    <audio id="winSound"></audio>
+    <audio id="loseSound"></audio>
     <audio id="clickSound" src="{{ url_for('static', filename='click.mp3') }}"></audio>
 
     <script src="{{ url_for('static', filename='game.js') }}"></script>
