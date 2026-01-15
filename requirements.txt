@@ -1,6 +1,8 @@
 Flask
 python-dotenv
 supabase
+gotrue
+postgrest
 waitress
 cryptography
 flask-limiter
