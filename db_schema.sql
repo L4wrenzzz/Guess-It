@@ -2,11 +2,20 @@
 -- It handles the logic of "If user exists, update score. If not, create user."
 -- Doing this in SQL (instead of Python) prevents "Race Conditions" where two updates happen at the exact same time.
 
+create table public.leaderboard (
+  username text not null,
+  points bigint null,
+  correct_guesses bigint null,
+  total_games bigint null,
+  constraint leaderboard_pkey primary key (username)
+) TABLESPACE pg_default;
+
 create or replace function update_score(
   p_username text,
   p_points int,
   p_won boolean
 )
+
 returns void as
 $$
 begin
