@@ -45,6 +45,29 @@ def create_app():
     application = Flask(__name__, static_folder='../static', template_folder='../templates')
     limiter.init_app(application)
 
+    # --- Production Security Check ---
+    # In production, we MUST have strong keys. In Dev, we can fallback to weak ones.
+    is_production = os.environ.get('FLASK_ENV') == 'production'
+    secret_key = os.environ.get('SECRET_KEY')
+    fernet_key = os.environ.get('FERNET_KEY')
+
+    if is_production:
+        if not secret_key:
+            raise ValueError("CRITICAL: SECRET_KEY is missing in Production environment.")
+        if not fernet_key:
+            raise ValueError("CRITICAL: FERNET_KEY is missing in Production environment.")
+
+    # The secret key is used to sign session cookies so they cannot be tampered with.
+    # Initialize Encryption (Fernet)
+    # We attach 'cipher_suite' to the app so we can access it in routes.py
+    application.secret_key = secret_key
+    if not fernet_key:
+        print("WARNING: FERNET_KEY not found. Generating a temporary one.")
+        application.cipher_suite = Fernet(Fernet.generate_key())
+    else:
+        application.cipher_suite = Fernet(fernet_key.encode())
+
+    # --- Login Manager Setup ---
     login_manager = LoginManager()
     login_manager.init_app(application)
     login_manager.login_view = 'main.handle_login'
@@ -54,36 +77,21 @@ def create_app():
     def load_user(user_id):
         return User(user_id)
 
+    # --- Redis Setup ---
     redis_url = os.environ.get('REDIS_URL', 'redis://localhost:6379')
     try:
-        # Try to connect to real Redis
         redis_conn = Redis.from_url(redis_url)
-        redis_conn.ping() # Check if server is actually running
+        redis_conn.ping() 
         application.task_queue = Queue(connection=redis_conn)
         print("✅ Redis Connected (Production Mode)")
     except ConnectionError:
-        # Fallback to Local Threads if Redis is missing
         print("⚠️ Redis not found. Using Local Threads (Dev Mode)")
         application.task_queue = LocalThreadQueue(application)
 
-    # The secret key is used to sign session cookies so they cannot be tampered with.
-    application.secret_key = os.environ.get('SECRET_KEY')
-
-    # Security Config: Simplified for Development
-    # We removed the strict 'Secure' cookie check so it works easily on localhost.
     application.config.update(
         SESSION_COOKIE_HTTPONLY=True,  # JavaScript cannot steal the cookie
         SESSION_COOKIE_SAMESITE='Lax', # Protects against CSRF attacks
     )
-
-    # Initialize Encryption (Fernet)
-    # We attach 'cipher_suite' to the app so we can access it in routes.py
-    fernet_key = os.environ.get('FERNET_KEY')
-    if not fernet_key:
-        print("WARNING: FERNET_KEY not found. Generating a temporary one.")
-        application.cipher_suite = Fernet(Fernet.generate_key())
-    else:
-        application.cipher_suite = Fernet(fernet_key.encode())
 
     # Import and register the routes (the API logic)
     from .routes import main_blueprint
