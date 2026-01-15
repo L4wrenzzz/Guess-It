@@ -69,13 +69,20 @@ class UIManager {
             toast: document.querySelector('.toast-message'),
         };
         
-        // Grab audio/gif paths from the hidden HTML config element
-        const config = document.getElementById('game-config');
+        // Define Win/Lose asset collections
         this.assets = {
-            win: config ? config.dataset.winSound : '',
-            lose: config ? config.dataset.loseSound : '',
-            correctGif: config ? config.dataset.correctGif : '',
-            wrongGif: config ? config.dataset.wrongGif : ''
+            win: [
+                { sound: 'win_hakari.mp3',  gif: 'win_hakari.gif' },
+                { sound: 'win_spidian.mp3', gif: 'win_spidian.gif' },
+                { sound: 'win_luffy.mp3',   gif: 'win_luffy.gif' },
+                { sound: 'win_wow.mp3',     gif: 'win_wow.gif' },
+            ],
+            lose: [
+                { sound: 'lose_noob.mp3',     gif: 'lose_noob.gif' },
+                { sound: 'lose_dogLaugh.mp3', gif: 'lose_dogLaugh.gif' },
+                { sound: 'lose_FAH.mp3',      gif: 'lose_FAH.gif' },
+                { sound: 'lose_laugh.mp3',    gif: 'lose_laugh.gif' },
+            ]
         };
         
         this.currentAudio = null;
@@ -116,15 +123,32 @@ class UIManager {
         }
     }
 
-    // Plays Win/Lose music on loop
-    playLoop(type) {
-        this.stopLoop();
-        const audioId = type + 'Sound'; 
+    // --- RANDOM ASSET LOGIC ---
+    triggerEndGameEffect(won) {
+        this.stopLoop(); // Stop any previous sound
+
+        // 1. Select the Collection (Win vs Lose)
+        const type = won ? 'win' : 'lose';
+        const collection = this.assets[type];
+
+        // 2. Pick a Random Pair
+        const randomPair = collection[Math.floor(Math.random() * collection.length)];
+
+        // 3. Update GIF
+        const gif = this.$('result-gif');
+        gif.style.display = 'block';
+        gif.src = '/static/' + randomPair.gif; // Points to static folder
+
+        // 4. Update and Play Audio
+        // We reuse the audio elements in HTML but change their source dynamically
+        const audioId = won ? 'winSound' : 'loseSound';
         this.currentAudio = document.getElementById(audioId);
-        if(this.currentAudio) {
+        
+        if (this.currentAudio) {
+            this.currentAudio.src = '/static/' + randomPair.sound; // Change source to random file
             this.currentAudio.loop = true;
             this.currentAudio.currentTime = 0;
-            this.currentAudio.play().catch(error=>{});
+            this.currentAudio.play().catch(error => console.log("Audio play blocked:", error));
         }
     }
 
@@ -134,13 +158,6 @@ class UIManager {
             this.currentAudio.currentTime = 0;
             this.currentAudio = null;
         }
-    }
-    
-    // Sets the result GIF based on win/loss
-    setResultGif(won) {
-        const gif = this.$('result-gif');
-        gif.style.display = 'block';
-        gif.src = won ? this.assets.correctGif : this.assets.wrongGif;
     }
 
     // Toggles visibility between Game, Stats, Leaderboard sections
@@ -208,10 +225,7 @@ class GameController {
         
         // Prevent accidental closing of tab during a game
         window.addEventListener('beforeunload', (event) => {
-            if (this.gameActive) {
-                event.preventDefault();
-                return "Changes you made may not be saved.";
-            }
+            if (this.gameActive) { event.preventDefault(); return "Changes you made may not be saved."; }
         });
 
         const loginButton = this.$('login-button');
@@ -430,8 +444,7 @@ class GameController {
         this.$('start-button').innerText = "Try again";
         
         // Trigger Win/Lose effects
-        this.ui.playLoop(won ? 'win' : 'lose');
-        this.ui.setResultGif(won);
+        this.ui.triggerEndGameEffect(won);
         
         this.gameActive = false;
     }
