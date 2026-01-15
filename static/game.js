@@ -5,52 +5,52 @@
 class GameAPI {
     // Sends login request
     static async login(username) {
-        const res = await fetch('/api/login', {
+        const response = await fetch('/api/login', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({username})
         });
-        return await res.json();
+        return await response.json();
     }
 
     // Sets game difficulty
     static async setDifficulty(difficulty) {
-        const res = await fetch('/api/difficulty', {
+        const response = await fetch('/api/difficulty', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({difficulty})
         });
-        return await res.json();
+        return await response.json();
     }
 
     static async startGame() {
-        const res = await fetch('/api/start', {method: 'POST'});
-        return await res.json();
+        const response = await fetch('/api/start', {method: 'POST'});
+        return await response.json();
     }
 
     static async submitGuess(guess) {
-        const res = await fetch('/api/guess', {
+        const response = await fetch('/api/guess', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({guess})
         });
         // If session expired (401), reload to force login
-        if (res.status === 401) {
+        if (response.status === 401) {
             window.location.reload(); 
             return null;
         }
-        return await res.json();
+        return await response.json();
     }
 
     // Fetches player stats
     static async getStats() {
-        const res = await fetch('/api/stats');
-        return await res.json();
+        const response = await fetch('/api/stats');
+        return await response.json();
     }
 
     static async getLeaderboard() {
-        const res = await fetch('/api/leaderboard');
-        return await res.json();
+        const response = await fetch('/api/leaderboard');
+        return await response.json();
     }
 
     static async logout() {
@@ -66,7 +66,7 @@ class GameAPI {
 class UIManager {
     constructor() {
         this.dom = {
-            toast: document.querySelector('.toast-msg'),
+            toast: document.querySelector('.toast-message'),
         };
         
         // Grab audio/gif paths from the hidden HTML config element
@@ -86,11 +86,11 @@ class UIManager {
 
     // Creates a temporary floating notification (Toast)
     showToast(message, type = 'info') {
-        const existing = document.querySelector('.toast-msg');
+        const existing = document.querySelector('.toast-message');
         if (existing) existing.remove();
 
         const toast = document.createElement('div');
-        toast.className = `toast-msg toast-${type}`;
+        toast.className = `toast-message toast-${type}`;
         // Dynamic styling for the toast
         toast.style.cssText = `
             position: fixed; top: 20px; right: 20px; 
@@ -109,8 +109,11 @@ class UIManager {
 
     // Plays click sound effect
     playClick() {
-        const s = document.getElementById('clickSound');
-        if (s) { s.currentTime = 0; s.play().catch(()=>{}); }
+        const soundElement = document.getElementById('clickSound');
+        if (soundElement) { 
+            soundElement.currentTime = 0; 
+            soundElement.play().catch(()=>{}); 
+        }
     }
 
     // Plays Win/Lose music on loop
@@ -121,7 +124,7 @@ class UIManager {
         if(this.currentAudio) {
             this.currentAudio.loop = true;
             this.currentAudio.currentTime = 0;
-            this.currentAudio.play().catch(e=>{});
+            this.currentAudio.play().catch(error=>{});
         }
     }
 
@@ -142,9 +145,9 @@ class UIManager {
 
     // Toggles visibility between Game, Stats, Leaderboard sections
     showSection(id) {
-        ['game', 'stats', 'leaderboard', 'titles'].forEach(s => {
-            const el = this.$('section-' + s);
-            if (el) el.classList.add('hidden');
+        ['game', 'stats', 'leaderboard', 'titles'].forEach(sectionId => {
+            const element = this.$('section-' + sectionId);
+            if (element) element.classList.add('hidden');
         });
         const active = this.$('section-' + id);
         if (active) active.classList.remove('hidden');
@@ -153,31 +156,31 @@ class UIManager {
 
     // Updates the colored title badge next to the username
     updateTitleDisplay(title) {
-        const titleEl = this.$('display-title');
-        const userEl = this.$('display-username');
+        const titleElement = this.$('display-title');
+        const userElement = this.$('display-username');
     
         if (!title) {
-            titleEl.className = 'player-title hidden';
-            titleEl.innerHTML = '';
-            userEl.className = '';
-            userEl.style.color = '';
+            titleElement.className = 'player-title hidden';
+            titleElement.innerHTML = '';
+            userElement.className = '';
+            userElement.style.color = '';
             return;
         }
     
         // Show title badge
-        titleEl.classList.remove('hidden');
+        titleElement.classList.remove('hidden');
         const formattedTitle = title.replace(' ', '-');
     
         if(title === "THE ONE") {
-            titleEl.innerHTML = "<span>THE ONE</span>";
+            titleElement.innerHTML = "<span>THE ONE</span>";
         } else {
-            titleEl.innerText = title;
+            titleElement.innerText = title;
         }
-        titleEl.className = 'player-title title-' + formattedTitle;
+        titleElement.className = 'player-title title-' + formattedTitle;
     
-        userEl.className = '';
-        userEl.classList.add('text-' + formattedTitle);
-        userEl.style.color = '';
+        userElement.className = '';
+        userElement.classList.add('text-' + formattedTitle);
+        userElement.style.color = '';
     }
 }
 
@@ -202,9 +205,9 @@ class GameController {
         window.addEventListener('online', () => this.ui.showToast("✅ Back Online", "success"));
         
         // Prevent accidental closing of tab during a game
-        window.addEventListener('beforeunload', (e) => {
+        window.addEventListener('beforeunload', (event) => {
             if (this.gameActive) {
-                e.preventDefault();
+                event.preventDefault();
                 return "Changes you made may not be saved.";
             }
         });
@@ -213,59 +216,59 @@ class GameController {
         document.addEventListener('click', () => { if(this.ui.currentAudio) this.ui.stopLoop(); });
         document.addEventListener('keydown', () => { if(this.ui.currentAudio) this.ui.stopLoop(); });
 
-        const loginBtn = this.$('login-btn');
-        if (loginBtn) loginBtn.addEventListener('click', () => this.handleLogin());
+        const loginButton = this.$('login-button');
+        if (loginButton) loginButton.addEventListener('click', () => this.handleLogin());
 
-        const startBtn = this.$('start-btn');
-        if (startBtn) startBtn.addEventListener('click', () => this.startGame());
+        const startButton = this.$('start-button');
+        if (startButton) startButton.addEventListener('click', () => this.startGame());
 
-        const submitBtn = this.$('submit-guess-btn');
-        if (submitBtn) submitBtn.addEventListener('click', () => this.makeGuess());
+        const submitButton = this.$('submit-guess-button');
+        if (submitButton) submitButton.addEventListener('click', () => this.makeGuess());
 
         // Allow pressing "Enter" to submit guess
         const guessInput = this.$('guess-input');
         if (guessInput) {
-            guessInput.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') this.makeGuess();
+            guessInput.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter') this.makeGuess();
             });
         }
         
         // Difficulty selector logic
-        const diffSelect = this.$('difficulty-select');
-        if (diffSelect) {
+        const difficultySelect = this.$('difficulty-select');
+        if (difficultySelect) {
             // Save previous value in case user cancels change
-            diffSelect.addEventListener('focus', () => {
-                diffSelect.setAttribute('data-prev', diffSelect.value);
+            difficultySelect.addEventListener('focus', () => {
+                difficultySelect.setAttribute('data-prev', difficultySelect.value);
             });
-            diffSelect.addEventListener('change', () => this.handleDifficultyChange());
+            difficultySelect.addEventListener('change', () => this.handleDifficultyChange());
         }
 
         // Navigation Menu Logic
         const buttons = document.querySelectorAll('button.secondary');
-        buttons.forEach(btn => {
-            if (btn.innerText.includes('Game')) btn.addEventListener('click', () => this.ui.showSection('game'));
-            if (btn.innerText.includes('Stats')) btn.addEventListener('click', () => this.loadStats());
-            if (btn.innerText.includes('Leaderboard')) btn.addEventListener('click', () => this.loadLeaderboard());
-            if (btn.innerText.includes('Titles')) btn.addEventListener('click', () => this.ui.showSection('titles'));
+        buttons.forEach(button => {
+            if (button.innerText.includes('Game')) button.addEventListener('click', () => this.ui.showSection('game'));
+            if (button.innerText.includes('Stats')) button.addEventListener('click', () => this.loadStats());
+            if (button.innerText.includes('Leaderboard')) button.addEventListener('click', () => this.loadLeaderboard());
+            if (button.innerText.includes('Titles')) button.addEventListener('click', () => this.ui.showSection('titles'));
         });
 
-        const quitBtn = document.querySelector('button.quit');
-        if (quitBtn) quitBtn.addEventListener('click', () => this.handleLogout());
+        const quitButton = document.querySelector('button.quit');
+        if (quitButton) quitButton.addEventListener('click', () => this.handleLogout());
     }
 
     // Logic to warn user if they change difficulty mid-game (causes forfeit)
     async handleDifficultyChange() {
-        const diffSelect = this.$('difficulty-select');
+        const difficultySelect = this.$('difficulty-select');
         
         if (this.gameActive) {
             const confirmed = confirm("⚠️ Warning: Changing difficulty will forfeit your current game!\n\nDo you want to proceed?");
             if (!confirmed) {
-                const prev = diffSelect.getAttribute('data-prev');
-                if(prev) diffSelect.value = prev;
+                const previousDifficulty = difficultySelect.getAttribute('data-prev');
+                if(previousDifficulty) difficultySelect.value = previousDifficulty;
                 return;
             }
         }
-        await this.setDifficulty(diffSelect.value);
+        await this.setDifficulty(difficultySelect.value);
     }
 
     async handleLogin() {
@@ -275,8 +278,8 @@ class GameController {
         if(!username) return;
 
         // Visual feedback (disable button)
-        this.$('login-btn').disabled = true;
-        this.$('login-btn').innerText = "Checking...";
+        this.$('login-button').disabled = true;
+        this.$('login-button').innerText = "Checking...";
         
         try {
             const data = await GameAPI.login(username);
@@ -295,18 +298,18 @@ class GameController {
             } else {
                 this.$('login-error').innerText = data.message;
             }
-        } catch (e) {
+        } catch (error) {
             this.ui.showToast("Connection Error", "error");
         } finally {
-            this.$('login-btn').disabled = false;
-            this.$('login-btn').innerText = "Play";
+            this.$('login-button').disabled = false;
+            this.$('login-button').innerText = "Play";
         }
     }
 
     // Sets the game difficulty on the server
     async setDifficulty(difficultyValue) {
-        const diffSelect = this.$('difficulty-select');
-        const diff = difficultyValue || (diffSelect ? diffSelect.value : 'easy');
+        const difficultySelect = this.$('difficulty-select');
+        const diff = difficultyValue || (difficultySelect ? difficultySelect.value : 'easy');
     
         try {
             const data = await GameAPI.setDifficulty(diff);
@@ -322,22 +325,22 @@ class GameController {
             
             this.gameActive = false;
 
-        } catch(e) { this.ui.showToast("Error setting difficulty", "error"); }
+        } catch(error) { this.ui.showToast("Error setting difficulty", "error"); }
         
         // Reset UI to "Start" state
         this.$('game-interface').classList.add('hidden');
-        this.$('start-btn-container').classList.remove('hidden');
+        this.$('start-button-container').classList.remove('hidden');
         this.$('result-gif').style.display = 'none';
     }
 
     async startGame() {
         this.ui.stopLoop();
-        this.$('start-btn').disabled = true;
+        this.$('start-button').disabled = true;
 
         try {
             const data = await GameAPI.startGame();
             // Swap "Start" button for "Game Interface"
-            this.$('start-btn-container').classList.add('hidden');
+            this.$('start-button-container').classList.add('hidden');
             this.$('game-interface').classList.remove('hidden');
             this.$('message-box').innerText = data.message;
             this.$('guess-history').innerText = "";
@@ -357,23 +360,23 @@ class GameController {
             this.gameActive = true;
 
         // Error starting game
-        } catch (e) {
+        } catch (error) {
             this.ui.showToast("Failed to start", "error");
         } finally {
-            this.$('start-btn').disabled = false;
+            this.$('start-button').disabled = false;
         }
     }
 
     // Handles submitting a guess to the server
     async makeGuess() {
         const input = this.$('guess-input');
-        const val = input.value;
-        if (!val) return;
+        const guessValue = input.value;
+        if (!guessValue) return;
 
-        this.$('submit-guess-btn').disabled = true; 
+        this.$('submit-guess-button').disabled = true; 
 
         try {
-            const data = await GameAPI.submitGuess(val);
+            const data = await GameAPI.submitGuess(guessValue);
             if (!data) return;
 
             if(data.status === 'warning') this.ui.showToast(data.message, 'error');
@@ -392,10 +395,10 @@ class GameController {
                 input.focus();
                 if(data.status !== 'warning') this.ui.playClick();
             }
-        } catch (e) {
+        } catch (error) {
             this.ui.showToast("Error sending guess", "error");
         } finally {
-            this.$('submit-guess-btn').disabled = false;
+            this.$('submit-guess-button').disabled = false;
             input.focus();
         }
     }
@@ -403,7 +406,7 @@ class GameController {
     endGame(won) {
         clearInterval(this.timerInterval);
         this.$('game-interface').classList.add('hidden');
-        this.$('start-btn-container').classList.remove('hidden');
+        this.$('start-button-container').classList.remove('hidden');
         
         // Trigger Win/Lose effects
         this.ui.playLoop(won ? 'win' : 'lose');

@@ -15,8 +15,8 @@
             <span class="game-title-text">Guess It</span>
         </div>
         <input type="text" id="username-input" placeholder="Enter Username (max 12)" maxlength="12">
-        <button id="login-btn">Play</button>
-        <p id="login-error" class="error-msg" role="alert" aria-live="assertive"></p>
+        <button id="login-button">Play</button>
+        <p id="login-error" class="error-message" role="alert" aria-live="assertive"></p>
     </div>
 
     <div id="main-screen" class="card fade-in {% if not username %}hidden{% endif %}">
@@ -57,14 +57,14 @@
                 </select>
             </div>
 
-            <div id="start-btn-container">
-                <button id="start-btn">Start</button>
+            <div id="start-button-container">
+                <button id="start-button">Start</button>
             </div>
 
             <div id="game-interface" class="hidden">
                 <div class="timer"><span id="timer">0</span>s</div>
                 <input type="number" id="guess-input" placeholder="Enter 1 to 10">
-                <button id="submit-guess-btn">Submit</button>
+                <button id="submit-guess-button">Submit</button>
                 <p class="history">History: <span id="guess-history" style="color: #fff;">-</span></p>
             </div>
 
@@ -90,11 +90,11 @@
                     <span>-</span> 
                     <span>Top #1 Highest points</span>
                 </li>
-                {% for title, pts in titles|reverse %}
+                {% for title, points_threshold in titles|reverse %}
                 <li>
                     <span class="player-title title-{{ title|replace(' ', '-') }}">{{ title }}</span> 
                     <span>-</span> 
-                    <span>{{ "{:,}".format(pts) }} points</span>
+                    <span>{{ "{:,}".format(points_threshold) }} points</span>
                 </li>
                 {% endfor %}
             </ul>
