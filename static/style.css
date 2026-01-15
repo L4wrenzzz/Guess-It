@@ -298,3 +298,23 @@ li:last-child { border: none; }
 .stat-item { background: rgba(0,0,0,0.2); padding: 15px; border-radius: 10px; }
 .stat-val { font-size: 1.5em; font-weight: bold; color: var(--accent); }
 .stat-label { font-size: 0.8em; opacity: 0.7; }
+
+/* Custom Scrollbar for Leaderboard */
+ul::-webkit-scrollbar {
+    width: 8px; /* Width of the vertical scrollbar */
+}
+
+ul::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.2); /* Dark transparent track */
+    border-radius: 4px;
+}
+
+ul::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2); /* White transparent handle */
+    border-radius: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+ul::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.4); /* Brighter on hover */
+}
