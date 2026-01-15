@@ -1,11 +1,13 @@
 import time
 import random
 import re
-import threading
 from functools import wraps
 from flask import Blueprint, render_template, request, session, jsonify, current_app
+from flask_login import login_user, logout_user, login_required, current_user
+from app.models import User
 from app.database import get_database_client
-from app import limiter 
+from app import limiter
+from app.config import GameConfig
 
 # Create a Blueprint. This is like a "mini-app" that holds our routes.
 # It helps keep the code organized separate from the setup code.
@@ -15,19 +17,6 @@ main_blueprint = Blueprint('main', __name__)
 # How long (in seconds) we keep the leaderboard in memory before refreshing from DB
 CACHE_TIMEOUT_SECONDS = 60
 
-DIFFICULTY_SETTINGS = {
-    'easy':       {'max_number': 10,        'max_attempts': 3,  'points': 3},
-    'medium':     {'max_number': 100,       'max_attempts': 8,  'points': 10},
-    'hard':       {'max_number': 1000,      'max_attempts': 15, 'points': 20},
-    'impossible': {'max_number': 100000,    'max_attempts': 25, 'points': 45},
-    'million':    {'max_number': 1000000,   'max_attempts': 50, 'points': 150},
-}
-
-TITLES = [
-    ("Newbie", 100), ("Rookie", 500), ("Pro", 2500), 
-    ("Legend", 5000), ("Champion", 10000)
-]
-
 # --- Memory Cache ---
 # We use simple dictionaries to store data in memory (RAM).
 # This reduces the number of times we have to ask the database for data.
@@ -36,33 +25,20 @@ LEADERBOARD_CACHE = {'data': [], 'last_updated': 0}
 
 # --- Helper Functions ---
 
-# Decorator: A function that wraps other functions to add security.
-# This ensures that specific routes (like 'guess') cannot be accessed unless logged in.
-def login_required(function_to_decorate):
-    @wraps(function_to_decorate)
-    def wrapper_function(*args, **kwargs):
-        if not session.get('username'):
-            return jsonify({'error': 'Unauthorized', 'message': 'Please login first.'}), 401
-        return function_to_decorate(*args, **kwargs)
-    return wrapper_function
-
 # Background Task: Saves the score to the database.
 # We run this in a separate thread so the user doesn't have to wait for the DB to finish.
-def _save_score_background_task(application_context, username: str, points: int, won: bool):
-    # We must manually activate the 'app_context' because this thread 
-    # is running outside the normal web request flow.
-    with application_context.app_context():
-        database_client = get_database_client()
-        if database_client:
-            try:
-                # Calls the 'update_score' SQL function we wrote in Supabase
-                database_client.rpc('update_score', {
-                    'p_username': username, 
-                    'p_points': points, 
-                    'p_won': won
-                }).execute()
-            except Exception as error:
-                current_app.logger.error(f"Database Save Failed for {username}: {error}")
+def _save_score_background_task(username: str, points: int, won: bool):
+    # Update the real database
+    database_client = get_database_client()
+    if database_client:
+        try:
+            database_client.rpc('update_score', {
+                'p_username': username, 
+                'p_points': points, 
+                'p_won': won
+            }).execute()
+        except Exception as error:
+            current_app.logger.error(f"Database Save Failed for {username}: {error}")
 
 def save_score_async(username: str, points_to_add: int, won: bool = False):
     """
@@ -75,19 +51,16 @@ def save_score_async(username: str, points_to_add: int, won: bool = False):
     if won:
         session['correct_guesses'] = session.get('correct_guesses', 0) + 1
     
-    # 2. Start Background Thread
-    # We pass the real 'current_app' object so the thread knows about config/logging
-    real_app_object = current_app._get_current_object()
-    background_thread = threading.Thread(
-        target=_save_score_background_task, 
-        args=(real_app_object, username, points_to_add, won), 
-        daemon=True
+    current_app.task_queue.enqueue(
+        _save_score_background_task, 
+        username=username, 
+        points=points_to_add, 
+        won=won
     )
-    background_thread.start()
 
 def get_player_title(points: int) -> str | None:
     # Calculates the title based on points.
-    for title_name, threshold in reversed(TITLES):
+    for title_name, threshold in reversed(GameConfig.TITLES):
         if points >= threshold: return title_name
     return None
 
@@ -176,16 +149,19 @@ def index_page():
         user_title = get_player_title(user_points)
         if session.get('is_the_one'): user_title = "THE ONE"
 
-    return render_template('index.html', username=session.get('username'), user_title=user_title, titles=TITLES)
+    return render_template('index.html', username=session.get('username'), user_title=user_title, titles=GameConfig.TITLES)
 
 @main_blueprint.route('/api/login', methods=['POST'])
-def login_user():
+def handle_login():
     request_data = request.get_json() or {}
     username = str(request_data.get('username', '')).strip()[:12]
     
     # Validation: Only letters and numbers allowed
     if not username or not re.match("^[a-zA-Z0-9]+$", username):
         return jsonify({'message': 'Invalid username.'}), 400
+    
+    user = User(username=username)
+    login_user(user, remember=True)
     
     session['username'] = username
     current_title = None
@@ -222,7 +198,7 @@ def login_user():
         session['points'] = 0
 
     return jsonify({
-        'success': True, 
+        'success': True,
         'points': session.get('points', 0), 
         'title': current_title, 
         'offline': session['offline_mode']
@@ -238,13 +214,13 @@ def set_difficulty_level():
     request_data = request.get_json(silent=True) or {}
     new_difficulty = request_data.get('difficulty', 'easy')
     
-    if new_difficulty not in DIFFICULTY_SETTINGS:
+    if new_difficulty not in GameConfig.DIFFICULTY_SETTINGS:
         return jsonify({'message': 'Invalid difficulty'}), 400
         
     session['difficulty'] = new_difficulty
     return jsonify({
         'message': f"Difficulty set to {new_difficulty.capitalize()}.",
-        'max_number': DIFFICULTY_SETTINGS[new_difficulty]['max_number']
+        'max_number': GameConfig.DIFFICULTY_SETTINGS[new_difficulty]['max_number']
     })
 
 @main_blueprint.route('/api/start', methods=['POST'])
@@ -253,7 +229,7 @@ def start_game():
     forfeit_game_if_active()
     clear_game_state()
     
-    settings = DIFFICULTY_SETTINGS[session.get('difficulty', 'easy')]
+    settings = GameConfig.DIFFICULTY_SETTINGS[session.get('difficulty', 'easy')]
     target_number = random.randint(1, settings['max_number'])
     
     # Encryption Step:
@@ -289,7 +265,7 @@ def process_guess():
     except Exception:
         return jsonify({'error': 'Security Error', 'message': 'Session invalid.'}), 400
 
-    settings = DIFFICULTY_SETTINGS[session.get('difficulty', 'easy')]
+    settings = GameConfig.DIFFICULTY_SETTINGS[session.get('difficulty', 'easy')]
     
     # Update History
     history = session.get('guess_history', [])
@@ -376,9 +352,11 @@ def get_user_stats():
     })
 
 @main_blueprint.route('/logout')
-def logout_user():
+def handle_logout():
     # Warns the user if they are in the middle of a game
     forfeit_game_if_active()
     # Logs out the user and clears the session.
+    logout_user()
+
     session.clear()
     return jsonify({'success': True})
