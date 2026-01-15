@@ -205,6 +205,11 @@ def login_user():
                 # Check for titles
                 current_title = "THE ONE" if check_if_user_is_the_one(username) else get_player_title(session['points'])
                 session['is_the_one'] = (current_title == "THE ONE")
+
+            else:
+                current_title = "Newbie"
+                session['points'] = 0
+
         except Exception as error:
             current_app.logger.error(f"Login Database Error: {error}")
             session['offline_mode'] = True
@@ -284,7 +289,7 @@ def process_guess():
     except Exception:
         return jsonify({'error': 'Security Error', 'message': 'Session invalid.'}), 400
 
-    settings = DIFFICULTY_SETTINGS[session['difficulty']]
+    settings = DIFFICULTY_SETTINGS[session.get('difficulty', 'easy')]
     
     # Update History
     history = session.get('guess_history', [])
