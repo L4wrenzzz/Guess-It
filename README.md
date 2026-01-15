@@ -60,6 +60,8 @@ Want to run this locally? Follow these steps:
 
 ## 🧪 Testing
 
-This project uses `pytest` for unit testing.
-```bash
-pytest
+This project uses `pytest` for unit testing. Since this is a development tool, it is not included in `requirements.txt`.
+
+1. **Install Pytest:**
+   ```bash
+   pip install pytest
