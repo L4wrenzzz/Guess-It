@@ -1,6 +1,9 @@
 import os
 from flask import g, current_app
 from supabase import create_client, Client
+from gotrue.errors import AuthError 
+from postgrest.exceptions import APIError
+from cryptography.fernet import InvalidToken
 
 # Type Hinting: This function returns either a Supabase Client or None
 def get_database_client() -> Client | None:
@@ -23,8 +26,11 @@ def get_database_client() -> Client | None:
         try:
             # Create the connection and store it in 'g'
             g.database_client = create_client(url, key)
-        except Exception as error:
-            current_app.logger.error(f"Database Connection Attempt Failed: {error}")
+        except (AuthError, APIError) as error:
+            current_app.logger.error(f"Supabase Client Error: {error}")
+            return None
+        except InvalidToken as error:
+            current_app.logger.error(f"Unexpected Database Connection Error: {error}")
             return None
 
     return g.database_client
