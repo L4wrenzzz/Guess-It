@@ -318,3 +318,30 @@ ul::-webkit-scrollbar-thumb {
 ul::-webkit-scrollbar-thumb:hover {
     background: rgba(255, 255, 255, 0.4); /* Brighter on hover */
 }
+
+/* Modal Overlay - Covers the whole screen */
+.modal-overlay {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: rgba(0, 0, 0, 0.7); /* Dark background */
+    z-index: 2000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(5px);
+}
+
+/* Modal Card specific adjustments */
+.modal-card {
+    max-width: 400px;
+    padding: 30px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+}
+
+.modal-buttons {
+    display: flex;
+    gap: 15px;
+    margin-top: 20px;
+}
