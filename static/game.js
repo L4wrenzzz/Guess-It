@@ -446,51 +446,97 @@ class GameController {
     // Fetches and displays the global leaderboard
     async loadLeaderboard() {
         this.ui.showSection('leaderboard');
-        const list = this.$('leaderboard-list');
-        list.innerHTML = "<div style='padding:20px'>Accessing Database...</div>";
+        const leaderboardList = document.getElementById('leaderboard-list');
+        
+        // 1. Safe Clear: Removes all previous entries safely
+        leaderboardList.replaceChildren(); 
+        
+        const loadingMessage = document.createElement('div');
+        loadingMessage.style.padding = "20px";
+        loadingMessage.innerText = "Accessing Database...";
+        leaderboardList.appendChild(loadingMessage);
         
         const data = await GameAPI.getLeaderboard();
         
-        list.innerHTML = "";
+        // Clear loading text
+        leaderboardList.replaceChildren();
         
         if (data.error === 'db_down') {
-            list.innerHTML = `
-                <div style="color: #ff5252; padding: 20px; text-align: center;">
-                    <h3>⚠️ Cannot Load</h3>
-                    <p>Database is currently offline.</p>
-                </div>
-            `;
+            const errorDiv = document.createElement('div');
+            errorDiv.style.color = "#ff5252";
+            errorDiv.style.padding = "20px";
+            errorDiv.style.textAlign = "center";
+            errorDiv.innerHTML = "<h3>⚠️ Cannot Load</h3><p>Database is currently offline.</p>";
+            leaderboardList.appendChild(errorDiv);
             return;
         }
     
-        // Populate leaderboard entries
+        // Populate leaderboard entries safely using document.createElement
+        // This prevents "HTML Injection" attacks
         data.forEach((player, index) => {
-            const li = document.createElement('li');
-            let titleHtml = '';
+            const listItem = document.createElement('li');
+            
+            // Container for Rank + Name
+            const leftContainer = document.createElement('div');
+            leftContainer.style.display = "flex";
+            leftContainer.style.alignItems = "center";
+            leftContainer.style.minWidth = "0";
+
+            // Rank Number
+            const rankSpan = document.createElement('span');
+            rankSpan.innerText = `${index + 1}.`;
+            rankSpan.style.width = "30px";
+            rankSpan.style.fontWeight = "bold";
+            rankSpan.style.color = "#888";
+            leftContainer.appendChild(rankSpan);
+
+            // Name Container
+            const nameContainer = document.createElement('div');
+            nameContainer.style.textAlign = "left";
+            nameContainer.style.display = "flex";
+            nameContainer.style.alignItems = "center";
+
             let textClass = '';
             
+            // Title Badge (if they have one)
             if (player.title) {
-                const rankClass = player.title.replace(' ', '-');
+                const rankClass = player.title.replace(/ /g, '-');
                 textClass = 'text-' + rankClass;
-                titleHtml = `<span class="player-title title-${rankClass}"><span>${player.title}</span></span>`;
+                
+                const titleBadge = document.createElement('span');
+                titleBadge.className = `player-title title-${rankClass}`;
+                
+                const innerTitle = document.createElement('span');
+                innerTitle.innerText = player.title;
+                titleBadge.appendChild(innerTitle);
+                
+                nameContainer.appendChild(titleBadge);
             }
-    
-            li.innerHTML = `
-                <div style="display:flex; align-items:center; min-width: 0;">
-                    <span style="width: 30px; font-weight:bold; color: #888; flex-shrink: 0;">${index + 1}.</span>
-                    <div style="text-align:left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center;">
-                        ${titleHtml}
-                        <strong class="${textClass}" style="margin-left: 8px;">${player.username}</strong>
-                    </div>
-                </div>
-                <span class="${textClass}" style="font-weight:bold; white-space: nowrap; margin-left: auto;">${player.points.toLocaleString()} points</span>
-            `;
-            list.appendChild(li);
+
+            // Username (Safe Text Injection)
+            const nameStrong = document.createElement('strong');
+            nameStrong.innerText = player.username; 
+            nameStrong.style.marginLeft = "8px";
+            if (textClass) nameStrong.className = textClass;
+            
+            nameContainer.appendChild(nameStrong);
+            leftContainer.appendChild(nameContainer);
+            listItem.appendChild(leftContainer);
+
+            // Points
+            const pointsSpan = document.createElement('span');
+            pointsSpan.innerText = `${player.points.toLocaleString()} points`;
+            pointsSpan.style.fontWeight = "bold";
+            pointsSpan.style.marginLeft = "auto";
+            if (textClass) pointsSpan.className = textClass;
+            listItem.appendChild(pointsSpan);
+
+            leaderboardList.appendChild(listItem);
         });
     }
 
-    // Handles user logout, with game forfeit warning
     async handleLogout() {
+        // This is the prompt you were looking for:
         if (this.gameActive) {
             const confirmed = confirm("⚠️ Warning: Logging out will forfeit your current game!\n\nDo you want to proceed?");
             if (!confirmed) return;
