@@ -107,6 +107,17 @@
     <audio id="loseSound"></audio>
     <audio id="clickSound" src="{{ url_for('static', filename='click.mp3') }}"></audio>
 
+    <div id="custom-modal" class="modal-overlay hidden">
+    <div class="card modal-card">
+        <h2 id="modal-title">⚠️ Warning</h2>
+        <p id="modal-message">Are you sure?</p>
+        <div class="modal-buttons">
+            <button id="modal-cancel" class="secondary">Cancel</button>
+            <button id="modal-confirm" class="quit">Confirm</button>
+        </div>
+    </div>
+    </div>
+
     <script src="{{ url_for('static', filename='js/game.js') }}"></script>
 </body>
 </html>
