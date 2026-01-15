@@ -319,6 +319,12 @@ class GameController {
         if(!navigator.onLine) return this.ui.showToast("You are offline.", "error");
         
         const usernameInput = this.$('username-input');
+        // Allow pressing "Enter" to submit login
+        if (usernameInput) {
+            usernameInput.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter') this.handleLogin();
+            });
+        }
         const username = usernameInput.value.trim();
         const errorText = this.$('login-error');
 
