@@ -272,8 +272,8 @@ class GameController {
         return new Promise((resolve) => {
             const modal = document.getElementById('custom-modal');
             const msgElem = document.getElementById('modal-message');
-            const btnConfirm = document.getElementById('modal-confirm');
-            const btnCancel = document.getElementById('modal-cancel');
+            const buttonConfirm = document.getElementById('modal-confirm');
+            const buttonCancel = document.getElementById('modal-cancel');
 
             // Set content
             msgElem.innerText = message;
@@ -282,18 +282,18 @@ class GameController {
             // Define cleanup to remove event listeners after click
             const cleanup = () => {
                 modal.classList.add('hidden');
-                btnConfirm.replaceWith(btnConfirm.cloneNode(true));
-                btnCancel.replaceWith(btnCancel.cloneNode(true));
+                buttonConfirm.replaceWith(buttonConfirm.cloneNode(true));
+                buttonCancel.replaceWith(buttonCancel.cloneNode(true));
             };
 
             // Handle Confirm
-            btnConfirm.onclick = () => {
+            buttonConfirm.onclick = () => {
                 cleanup();
                 resolve(true); // User clicked Confirm
             };
 
             // Handle Cancel
-            btnCancel.onclick = () => {
+            buttonCancel.onclick = () => {
                 cleanup();
                 resolve(false); // User clicked Cancel
             };
