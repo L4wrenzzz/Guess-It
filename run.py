@@ -4,7 +4,7 @@ from app import create_app
 # --- Blackfire Configuration ---
 # We configure this before creating the app so it can hook into everything.
 # On Windows, ensure you have the Blackfire agent installed if you want to test this locally.
-if os.environ.get('ENABLE_BLACKFIRE') == '1':
+if os.environ.get('ENABLE_BLACKFIRE') == "1":
     try:
         import blackfire
         blackfire.patch_all()
