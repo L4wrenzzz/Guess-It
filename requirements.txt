@@ -1,11 +1,9 @@
 Flask
 python-dotenv
 supabase
-blackfire
 waitress
 cryptography
 flask-limiter
 flask-login
-threading
 redis
 rq
