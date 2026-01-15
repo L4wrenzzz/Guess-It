@@ -1,5 +1,6 @@
 import pytest
 import os
+from cryptography.fernet import Fernet
 from app import create_app
 
 # The name 'conftest.py' is magic in Pytest.
@@ -13,8 +14,9 @@ def client():
     """
     # Setup Fake Config
     os.environ['SECRET_KEY'] = 'test_secret_key'
-    # We need a fake encryption key for tests to pass
-    os.environ['FERNET_KEY'] = 'test_fernet_key_must_be_url_safe_base64_encoded_value='
+    
+    # Generate a real, valid Fernet key so the app doesn't crash
+    os.environ['FERNET_KEY'] = Fernet.generate_key().decode()
     
     application = create_app()
     
@@ -25,4 +27,4 @@ def client():
     # Create the test client
     with application.test_client() as test_client:
         with application.app_context():
-            yield test_client  # This is where the testing happens
+            yield test_client # This is where the testing happens
