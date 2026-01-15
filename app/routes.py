@@ -207,7 +207,7 @@ def login_user():
                 session['is_the_one'] = (current_title == "THE ONE")
 
             else:
-                current_title = "Newbie"
+                current_title = None
                 session['points'] = 0
 
         except Exception as error:
@@ -216,7 +216,7 @@ def login_user():
     else:
         # If DB is down, allow playing in Offline Mode
         session['offline_mode'] = True
-        current_title = "Newbie"
+        current_title = None
 
     if session['offline_mode']:
         session['points'] = 0
