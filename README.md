@@ -61,4 +61,4 @@ Want to run this locally? Follow these steps:
 
 ## 🧪 Testing
 
-This project uses `pytest` for unit testing and blackfire for monitoring performance.
+This project uses `pytest` for unit testing and blackfire extension for monitoring performance.
