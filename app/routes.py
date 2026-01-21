@@ -13,7 +13,7 @@ from cryptography.fernet import InvalidToken
 from app.schemas import LoginRequest, GuessRequest
 from pydantic import ValidationError
 
-# --- NEW IMPORTS FOR WORKER ---
+# --- IMPORTS FOR WORKER ---
 from supabase import create_client
 from dotenv import load_dotenv
 
@@ -24,7 +24,8 @@ main_blueprint = Blueprint('main', __name__)
 CACHE_TIMEOUT_SECONDS = 5
 
 # --- Memory Cache ---
-TOP_PLAYER_CACHE = {'username': None, 'last_updated': 0}
+# BOSS EDIT: Added 'points' to cache structure to fix the race condition logic
+TOP_PLAYER_CACHE = {'username': None, 'points': 0, 'last_updated': 0}
 LEADERBOARD_CACHE = {'data': [], 'last_updated': 0}
 
 # --- Helper Functions ---
@@ -74,37 +75,55 @@ def save_score_async(username: str, points_to_add: int, won: bool = False):
         session['correct_guesses'] = session.get('correct_guesses', 0) + 1
     
     # 2. Send task to the Queue
-    current_app.task_queue.enqueue(
-        _save_score_background_task,
-        username=username, 
-        points=points_to_add, 
-        won=won
-    )
+    # BOSS NOTE: Ensure task_queue is available (it should be via create_app)
+    if hasattr(current_app, 'task_queue'):
+        current_app.task_queue.enqueue(
+            _save_score_background_task,
+            username=username, 
+            points=points_to_add, 
+            won=won
+        )
 
 def get_player_title(points: int) -> str | None:
     for title_name, threshold in reversed(GameConfig.TITLES):
         if points >= threshold: return title_name
     return None
 
-def check_if_user_is_the_one(username: str) -> bool:
+# BOSS FIX: Added 'current_user_points' to handle Optimistic UI check
+def check_if_user_is_the_one(username: str, current_user_points: int = 0) -> bool:
     current_time = time.time()
     
-    if TOP_PLAYER_CACHE['username'] and (current_time - TOP_PLAYER_CACHE['last_updated'] < CACHE_TIMEOUT_SECONDS):
-        return TOP_PLAYER_CACHE['username'] == username
-
-    database_client = get_database_client()
-    if not database_client: return False
+    # 1. Retrieve cached top player info
+    cached_top_user = TOP_PLAYER_CACHE['username']
+    cached_top_points = TOP_PLAYER_CACHE.get('points', 0)
     
-    try:
-        response = database_client.table('leaderboard').select('username').order('points', desc=True).limit(1).execute()
-        if response.data:
-            top_user = response.data[0]['username']
-            TOP_PLAYER_CACHE['username'] = top_user
-            TOP_PLAYER_CACHE['last_updated'] = current_time
-            return top_user == username
-    except InvalidToken:
-        pass
-    return False
+    # 2. If cache is expired or empty, fetch fresh data
+    if not cached_top_user or (current_time - TOP_PLAYER_CACHE['last_updated'] > CACHE_TIMEOUT_SECONDS):
+        database_client = get_database_client()
+        if database_client:
+            try:
+                # BOSS FIX: We select 'points' as well to compare accurately
+                response = database_client.table('leaderboard').select('username, points').order('points', desc=True).limit(1).execute()
+                if response.data:
+                    top_data = response.data[0]
+                    cached_top_user = top_data['username']
+                    cached_top_points = top_data['points']
+                    
+                    # Update Cache
+                    TOP_PLAYER_CACHE['username'] = cached_top_user
+                    TOP_PLAYER_CACHE['points'] = cached_top_points
+                    TOP_PLAYER_CACHE['last_updated'] = current_time
+            except InvalidToken:
+                pass
+    
+    # 3. Optimistic Comparison
+    # If I have more points NOW (in session) than the DB says the top player has,
+    # I am "THE ONE", even if the DB hasn't updated yet.
+    if current_user_points > cached_top_points:
+        return True
+        
+    # Standard check
+    return cached_top_user == username
 
 def initialize_session_defaults():
     default_values = {
@@ -156,8 +175,10 @@ def index_page():
     user_title = None
     if session.get('username'):
         user_points = session.get('points', 0)
-        user_title = get_player_title(user_points)
-        if session.get('is_the_one'): user_title = "THE ONE"
+        # Pass current points to ensure title is accurate
+        is_the_one = check_if_user_is_the_one(session.get('username'), user_points)
+        user_title = "THE ONE" if is_the_one else get_player_title(user_points)
+        if is_the_one: session['is_the_one'] = True
 
     return render_template('index.html', username=session.get('username'), user_title=user_title, titles=GameConfig.TITLES)
 
@@ -188,7 +209,9 @@ def handle_login() -> Response:
                 session['total_games'] = user_data.get('total_games', 0)
                 session['correct_guesses'] = user_data.get('correct_guesses', 0)
                 
-                current_title = "THE ONE" if check_if_user_is_the_one(username) else get_player_title(session['points'])
+                # Check title with fresh data
+                is_the_one = check_if_user_is_the_one(username, session['points'])
+                current_title = "THE ONE" if is_the_one else get_player_title(session['points'])
                 session['is_the_one'] = (current_title == "THE ONE")
 
             else:
@@ -285,9 +308,16 @@ def process_guess() -> Response:
     if guess_value == correct_number:
         time_taken = int(time.time() - session['game_start_time'])
         
+        # NOTE: Updates session instantly, but DB update is async
         save_score_async(session['username'], settings['points'], won=True)
         
-        new_title = "THE ONE" if check_if_user_is_the_one(session['username']) else get_player_title(session['points'])
+        # BOSS FIX: Use the updated session points for the check
+        is_the_one = check_if_user_is_the_one(session['username'], session['points'])
+        new_title = "THE ONE" if is_the_one else get_player_title(session['points'])
+        
+        # Persist this specific title flag for other routes
+        session['is_the_one'] = (new_title == "THE ONE")
+        
         clear_game_state()
         
         return jsonify({
@@ -332,6 +362,12 @@ def get_leaderboard_data() -> Response:
                 'points': player['points'], 
                 'title': title
             })
+            
+            # Keep the top player cache in sync when we fetch the full leaderboard
+            if index == 0:
+                TOP_PLAYER_CACHE['username'] = player['username']
+                TOP_PLAYER_CACHE['points'] = player['points']
+                TOP_PLAYER_CACHE['last_updated'] = current_time
         
         LEADERBOARD_CACHE['data'] = leaderboard_data
         LEADERBOARD_CACHE['last_updated'] = current_time
