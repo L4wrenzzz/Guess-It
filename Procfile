@@ -1,1 +1,1 @@
-web: waitress-serve --listen=0.0.0.0:$PORT run:application
+web: rq worker -u $REDIS_URL & waitress-serve --listen=0.0.0.0:$PORT run:application
