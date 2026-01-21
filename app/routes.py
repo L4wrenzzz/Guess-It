@@ -21,7 +21,7 @@ from dotenv import load_dotenv
 main_blueprint = Blueprint('main', __name__)
 
 # --- Constants ---
-CACHE_TIMEOUT_SECONDS = 60
+CACHE_TIMEOUT_SECONDS = 5
 
 # --- Memory Cache ---
 TOP_PLAYER_CACHE = {'username': None, 'last_updated': 0}
