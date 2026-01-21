@@ -1,6 +1,7 @@
 import time
 import random
 import re
+import os
 from functools import wraps
 from flask import Blueprint, Response, render_template, request, session, jsonify, current_app
 from flask_login import login_user, logout_user, login_required, current_user
@@ -12,36 +13,54 @@ from cryptography.fernet import InvalidToken
 from app.schemas import LoginRequest, GuessRequest
 from pydantic import ValidationError
 
+# --- NEW IMPORTS FOR WORKER ---
+from supabase import create_client
+from dotenv import load_dotenv
+
 # Create a Blueprint. This is like a "mini-app" that holds our routes.
-# It helps keep the code organized separate from the setup code.
 main_blueprint = Blueprint('main', __name__)
 
 # --- Constants ---
-# How long (in seconds) we keep the leaderboard in memory before refreshing from DB
 CACHE_TIMEOUT_SECONDS = 60
 
 # --- Memory Cache ---
-# We use simple dictionaries to store data in memory (RAM).
-# This reduces the number of times we have to ask the database for data.
 TOP_PLAYER_CACHE = {'username': None, 'last_updated': 0}
 LEADERBOARD_CACHE = {'data': [], 'last_updated': 0}
 
 # --- Helper Functions ---
 
-# Background Task: Saves the score to the database.
-# We run this in a separate thread so the user doesn't have to wait for the DB to finish.
+# FIXED: Independent Background Task
+# This function now creates its own database connection so it doesn't crash 
+# when running in the background worker (RQ).
 def _save_score_background_task(username: str, points: int, won: bool):
-    # Update the real database
-    database_client = get_database_client()
-    if database_client:
-        try:
-            database_client.rpc('update_score', {
-                'p_username': username, 
-                'p_points': points, 
-                'p_won': won
-            }).execute()
-        except InvalidToken as error:
-            current_app.logger.error(f"[Background Task] Score Save Failed: {error}")
+    # 1. Load Environment Variables (Secrets)
+    load_dotenv()
+    
+    url = os.environ.get("SUPABASE_URL")
+    key = os.environ.get("SUPABASE_KEY")
+    
+    # 2. Safety Check
+    if not url or not key:
+        print("❌ [Worker Error] Supabase credentials missing.")
+        return
+
+    try:
+        # 3. Create a fresh connection specifically for this task
+        # We don't use 'get_database_client()' here because that relies on Flask's 'g' context,
+        # which doesn't exist inside the background worker process.
+        supabase = create_client(url, key)
+        
+        supabase.rpc('update_score', {
+            'p_username': username, 
+            'p_points': points, 
+            'p_won': won
+        }).execute()
+        
+        # We use print() because 'current_app.logger' might not be available
+        print(f"✅ [Worker] Saved score for {username}")
+        
+    except Exception as error:
+        print(f"❌ [Worker Failed] {error}")
 
 def save_score_async(username: str, points_to_add: int, won: bool = False):
     """
@@ -54,6 +73,7 @@ def save_score_async(username: str, points_to_add: int, won: bool = False):
     if won:
         session['correct_guesses'] = session.get('correct_guesses', 0) + 1
     
+    # 2. Send task to the Queue
     current_app.task_queue.enqueue(
         _save_score_background_task,
         username=username, 
@@ -62,21 +82,16 @@ def save_score_async(username: str, points_to_add: int, won: bool = False):
     )
 
 def get_player_title(points: int) -> str | None:
-    # Calculates the title based on points.
     for title_name, threshold in reversed(GameConfig.TITLES):
         if points >= threshold: return title_name
     return None
 
 def check_if_user_is_the_one(username: str) -> bool:
-    # Checks if the user is the #1 player.
-    # Uses caching to prevent spamming the DB with queries.
     current_time = time.time()
     
-    # Check Cache First
     if TOP_PLAYER_CACHE['username'] and (current_time - TOP_PLAYER_CACHE['last_updated'] < CACHE_TIMEOUT_SECONDS):
         return TOP_PLAYER_CACHE['username'] == username
 
-    # If Cache expired, check Database
     database_client = get_database_client()
     if not database_client: return False
     
@@ -84,7 +99,6 @@ def check_if_user_is_the_one(username: str) -> bool:
         response = database_client.table('leaderboard').select('username').order('points', desc=True).limit(1).execute()
         if response.data:
             top_user = response.data[0]['username']
-            # Update Cache
             TOP_PLAYER_CACHE['username'] = top_user
             TOP_PLAYER_CACHE['last_updated'] = current_time
             return top_user == username
@@ -93,7 +107,6 @@ def check_if_user_is_the_one(username: str) -> bool:
     return False
 
 def initialize_session_defaults():
-    # Sets up empty values for a new user session.
     default_values = {
         'points': 0, 'total_games': 0, 'correct_guesses': 0,
         'difficulty': 'easy', 'attempts': 0, 'game_ready': False,
@@ -103,14 +116,12 @@ def initialize_session_defaults():
         session.setdefault(key, value)
 
 def forfeit_game_if_active():
-    # Anti-Cheat: If user leaves mid-game, count it as a loss.
     if session.get('game_ready') and 'target_token' in session:
         username = session.get('username')
         if username:
             save_score_async(username, 0, won=False)
 
 def clear_game_state():
-    # Removes sensitive game data (like the target number) from the session.
     session.pop('target_token', None)
     session.pop('game_start_time', None)
     session['game_ready'] = False
@@ -120,9 +131,6 @@ def clear_game_state():
 
 @main_blueprint.after_request
 def add_security_headers(response: Response) -> Response:
-    # Adds HTTP headers that tell the browser to enable security features.
-    
-    # We added 'frame-src' to allow Blackfire's toolbar to load.
     response.headers['Content-Security-Policy'] = (
         "default-src 'self'; img-src 'self' data:; "
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
@@ -139,7 +147,6 @@ def add_security_headers(response: Response) -> Response:
 
 @main_blueprint.route('/')
 def index_page():
-    # If they refresh the page while playing, they forfeit the current game
     if session.get('game_ready'):
          forfeit_game_if_active()
          clear_game_state()
@@ -158,14 +165,10 @@ def index_page():
 def handle_login() -> Response:
     request_data = request.get_json() or {}
     
-    # Validation: Only letters and numbers allowed
     try:
-        # We try to fit the data into our "LoginRequest" blueprint.
-        # If it doesn't fit, it crashes into the "except" block below.
         validated_data = LoginRequest(**request_data)
         username = validated_data.username
     except ValidationError as e:
-        # Pydantic gives us a nice error list automatically
         return jsonify({'message': e.errors()[0]['msg']}), 400
     
     user = User(username=username)
@@ -178,7 +181,6 @@ def handle_login() -> Response:
     database_client = get_database_client()
     if database_client:
         try:
-            # Fetch user stats from DB
             response = database_client.table('leaderboard').select('*').eq('username', username).execute()
             if response.data:
                 user_data = response.data[0]
@@ -186,7 +188,6 @@ def handle_login() -> Response:
                 session['total_games'] = user_data.get('total_games', 0)
                 session['correct_guesses'] = user_data.get('correct_guesses', 0)
                 
-                # Check for titles
                 current_title = "THE ONE" if check_if_user_is_the_one(username) else get_player_title(session['points'])
                 session['is_the_one'] = (current_title == "THE ONE")
 
@@ -198,7 +199,6 @@ def handle_login() -> Response:
             current_app.logger.error(f"Login Database Error: {error}")
             session['offline_mode'] = True
     else:
-        # If DB is down, allow playing in Offline Mode
         session['offline_mode'] = True
         current_title = None
 
@@ -215,7 +215,6 @@ def handle_login() -> Response:
 @main_blueprint.route('/api/difficulty', methods=['POST'])
 @login_required
 def set_difficulty_level() -> Response:
-    # Changing difficulty mid-game counts as a loss
     forfeit_game_if_active()
     clear_game_state()
     
@@ -240,9 +239,6 @@ def start_game() -> Response:
     settings = GameConfig.DIFFICULTY_SETTINGS[session.get('difficulty', 'easy')]
     target_number = random.randint(1, settings['max_number'])
     
-    # Encryption Step:
-    # We encrypt the target number before storing it in the user's cookie.
-    # This prevents the user from decoding their cookie to cheat.
     encrypted_token = current_app.cipher_suite.encrypt(str(target_number).encode()).decode()
     session['target_token'] = encrypted_token
     
@@ -255,7 +251,7 @@ def start_game() -> Response:
 
 @main_blueprint.route('/api/guess', methods=['POST'])
 @login_required
-@limiter.limit("3 per second") # Rate Limit: Only 3 guesses per second allowed
+@limiter.limit("3 per second")
 def process_guess() -> Response:
     if not session.get('game_ready') or 'target_token' not in session:
         return jsonify({'error': 'State Error', 'message': 'Game not started'}), 400
@@ -265,11 +261,9 @@ def process_guess() -> Response:
         validated_data = GuessRequest(**request_data)
         guess_value = validated_data.guess
     except ValidationError:
-        # If they sent a string "abc" or no number, this catches it.
         return jsonify({'status': 'error', 'message': "Invalid number."}), 400
 
     try:
-        # Decrypt the target number from the session
         token = session['target_token']
         correct_number = int(current_app.cipher_suite.decrypt(token.encode()).decode())
     except InvalidToken:
@@ -281,15 +275,13 @@ def process_guess() -> Response:
 
     settings = GameConfig.DIFFICULTY_SETTINGS[session.get('difficulty', 'easy')]
     
-    # Update History
     history = session.get('guess_history', [])
     history.append(guess_value)
     session['guess_history'] = history
-    session.modified = True # Tell Flask the session data changed
+    session.modified = True 
     
     session['attempts'] += 1
     
-    # WIN Logic
     if guess_value == correct_number:
         time_taken = int(time.time() - session['game_start_time'])
         
@@ -305,13 +297,11 @@ def process_guess() -> Response:
             'new_title': new_title
         })
         
-    # LOSE Logic
     elif session['attempts'] >= settings['max_attempts']:
         save_score_async(session['username'], 0, won=False)
         clear_game_state()
         return jsonify({'status': 'lose', 'message': f"❌ Game Over! The number was {correct_number}."})
         
-    # CONTINUE Logic
     else:
         hint_text = "Higher" if guess_value < correct_number else "Lower"
         return jsonify({
@@ -325,7 +315,6 @@ def process_guess() -> Response:
 def get_leaderboard_data() -> Response:
     current_time = time.time()
     
-    # Check Cache first (Server-side caching)
     if LEADERBOARD_CACHE['data'] and (current_time - LEADERBOARD_CACHE['last_updated'] < CACHE_TIMEOUT_SECONDS):
         return jsonify(LEADERBOARD_CACHE['data'])
     
@@ -337,7 +326,6 @@ def get_leaderboard_data() -> Response:
         response = database_client.table('leaderboard').select('username', 'points').order('points', desc=True).limit(100).execute()
         leaderboard_data = []
         for index, player in enumerate(response.data):
-            # Rank 1 gets "THE ONE", others get normal titles
             title = "THE ONE" if index == 0 else get_player_title(player['points'])
             leaderboard_data.append({
                 'username': player['username'], 
@@ -345,7 +333,6 @@ def get_leaderboard_data() -> Response:
                 'title': title
             })
         
-        # Update Cache
         LEADERBOARD_CACHE['data'] = leaderboard_data
         LEADERBOARD_CACHE['last_updated'] = current_time
         return jsonify(leaderboard_data)
@@ -367,10 +354,7 @@ def get_user_stats() -> Response:
 
 @main_blueprint.route('/logout')
 def handle_logout() -> Response:
-    # Warns the user if they are in the middle of a game
     forfeit_game_if_active()
-    # Logs out the user and clears the session.
     logout_user()
-
     session.clear()
     return jsonify({'success': True})
