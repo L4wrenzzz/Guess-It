@@ -61,3 +61,41 @@ def test_change_difficulty(client):
     
     # Check if the max number updated to 1000 (Hard mode)
     assert data['max_number'] == 1000
+
+def test_guess_without_starting(client):
+    """Test guessing before clicking start"""
+    client.post('/api/login', json={'username': 'SadPathUser'})
+    response = client.post('/api/guess', json={'guess': 50})
+    
+    assert response.status_code == 400
+    assert b"Game not started" in response.data
+
+def test_invalid_guess_input(client):
+    """Test sending text instead of numbers"""
+    client.post('/api/login', json={'username': 'SadPathUser'})
+    client.post('/api/start')
+    
+    # Send "ABC" instead of a number
+    response = client.post('/api/guess', json={'guess': "ABC"})
+    assert response.status_code == 400
+    assert b"Invalid number" in response.data
+    
+    # Send negative number (optional check if you want to enforce it)
+    # response = client.post('/api/guess', json={'guess': -5})
+
+def test_db_offline_behavior(client):
+    """Simulate Database failure"""
+    from flask import current_app
+    
+    # Manually break the DB client for this test
+    with client.application.app_context():
+        current_app.supabase_client = None
+
+    client.post('/api/login', json={'username': 'OfflineUser'})
+    
+    # Should return success but with offline=True
+    response = client.get('/api/stats')
+    data = response.get_json()
+    
+    assert response.status_code == 200
+    assert data['offline'] is True
