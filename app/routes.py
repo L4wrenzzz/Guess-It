@@ -9,6 +9,8 @@ from app.database import get_database_client
 from app import limiter
 from app.config import GameConfig
 from cryptography.fernet import InvalidToken
+from app.schemas import LoginRequest, GuessRequest
+from pydantic import ValidationError
 
 # Create a Blueprint. This is like a "mini-app" that holds our routes.
 # It helps keep the code organized separate from the setup code.
@@ -155,11 +157,16 @@ def index_page():
 @main_blueprint.route('/api/login', methods=['POST'])
 def handle_login() -> Response:
     request_data = request.get_json() or {}
-    username = str(request_data.get('username', '')).strip()[:12]
     
     # Validation: Only letters and numbers allowed
-    if not username or not re.match("^[a-zA-Z0-9]+$", username):
-        return jsonify({'message': 'Invalid username.'}), 400
+    try:
+        # We try to fit the data into our "LoginRequest" blueprint.
+        # If it doesn't fit, it crashes into the "except" block below.
+        validated_data = LoginRequest(**request_data)
+        username = validated_data.username
+    except ValidationError as e:
+        # Pydantic gives us a nice error list automatically
+        return jsonify({'message': e.errors()[0]['msg']}), 400
     
     user = User(username=username)
     login_user(user, remember=True)
@@ -255,8 +262,10 @@ def process_guess() -> Response:
 
     request_data = request.get_json(silent=True) or {}
     try:
-        guess_value = int(request_data.get('guess'))
-    except (ValueError, TypeError):
+        validated_data = GuessRequest(**request_data)
+        guess_value = validated_data.guess
+    except ValidationError:
+        # If they sent a string "abc" or no number, this catches it.
         return jsonify({'status': 'error', 'message': "Invalid number."}), 400
 
     try:
