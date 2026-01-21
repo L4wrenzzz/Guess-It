@@ -9,44 +9,24 @@ from dotenv import load_dotenv
 from redis import Redis, ConnectionError
 from rq import Queue
 
+from app.utils import LocalThreadQueue
+
 # Smart Storage Selection
-# If REDIS_URL is in .env, use it. Otherwise, use computer memory (RAM).
 storage_uri = os.environ.get("REDIS_URL", "memory://")
 
-# We initialize the Rate Limiter here but connect it to the app later.
-# This prevents users from spamming your API.
 limiter = Limiter(
     key_func=get_remote_address,
     storage_uri=storage_uri, 
     default_limits=["200 per day", "50 per hour"]
 )
 
-class LocalThreadQueue:
-    def __init__(self, app_instance):
-        self.app = app_instance
-
-    def enqueue(self, func, **kwargs):
-        # Wraps the background task in a thread and injects the App Context
-        # so it has access to database configuration.
-        def thread_wrapper(app, target_func, kwargs):
-            with app.app_context():
-                target_func(**kwargs)
-
-        thread = threading.Thread(target=thread_wrapper, args=(self.app, func, kwargs))
-        thread.start()
-
 def create_app():
-    # Load secret keys from the .env file
     load_dotenv()
 
-    # Initialize the Flask application
-    # We explicitly tell Flask where to find 'static' files and 'templates'
-    # because this file is inside the 'app' folder, not the root.
     application = Flask(__name__, static_folder='../static', template_folder='../templates')
     limiter.init_app(application)
 
     # --- Production Security Check ---
-    # In production, we MUST have strong keys. In Dev, we can fallback to weak ones.
     is_production = os.environ.get('FLASK_ENV') == 'production'
     secret_key = os.environ.get('SECRET_KEY')
     fernet_key = os.environ.get('FERNET_KEY')
@@ -54,18 +34,16 @@ def create_app():
     if is_production:
         if not secret_key:
             raise ValueError("CRITICAL: SECRET_KEY is missing in Production environment.")
-        if not fernet_key:
-            raise ValueError("CRITICAL: FERNET_KEY is missing in Production environment.")
+        # We handle fernet_key specific logic below
 
-    # The secret key is used to sign session cookies so they cannot be tampered with.
-    # Initialize Encryption (Fernet)
-    # We attach 'cipher_suite' to the app so we can access it in routes.py
     application.secret_key = secret_key
+
+    # --- Initialize Encryption (Fernet) ---
     if not fernet_key:
-        print("WARNING: FERNET_KEY not found. Generating a temporary one.")
-        application.cipher_suite = Fernet(Fernet.generate_key())
-    else:
-        application.cipher_suite = Fernet(fernet_key.encode())
+        # STRICT MODE: Fail if key is missing (As requested)
+        raise ValueError("CRITICAL: FERNET_KEY is missing. Cannot start securely.")
+    
+    application.cipher_suite = Fernet(fernet_key.encode())
 
     # --- Login Manager Setup ---
     login_manager = LoginManager()
@@ -84,16 +62,20 @@ def create_app():
         redis_conn.ping() 
         application.task_queue = Queue(connection=redis_conn)
         print("✅ Redis Connected (Production Mode)")
+        
+        # Future Growth: If you ever build a massive app with millions of users, 
+        # look into a task queue like Celery or RQ (which you already have in your requirements!) 
+        # to run tasks on a completely different CPU process.
+
     except ConnectionError:
         print("⚠️ Redis not found. Using Local Threads (Dev Mode)")
         application.task_queue = LocalThreadQueue(application)
 
     application.config.update(
-        SESSION_COOKIE_HTTPONLY=True,  # JavaScript cannot steal the cookie
-        SESSION_COOKIE_SAMESITE='Lax', # Protects against CSRF attacks
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE='Lax',
     )
 
-    # Import and register the routes (the API logic)
     from .routes import main_blueprint
     application.register_blueprint(main_blueprint)
 
