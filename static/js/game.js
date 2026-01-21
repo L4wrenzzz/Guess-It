@@ -124,8 +124,8 @@ class UIManager {
     }
 
     // --- RANDOM ASSET LOGIC ---
-    triggerEndGameEffect(won) {
-        this.stopLoop(); // Stop any previous sound
+    triggerGameEffect(won, shouldLoop = true) {
+        this.stopLoop(); // Stop any previous sound to prevent lag/overlap
 
         // 1. Select the Collection (Win vs Lose)
         const type = won ? 'win' : 'lose';
@@ -146,7 +146,7 @@ class UIManager {
         
         if (this.currentAudio) {
             this.currentAudio.src = '/static/' + randomPair.sound; // Change source to random file
-            this.currentAudio.loop = true;
+            this.currentAudio.loop = shouldLoop; // Control looping based on context
             this.currentAudio.currentTime = 0;
             this.currentAudio.play().catch(error => console.log("Audio play blocked:", error));
         }
@@ -464,7 +464,11 @@ class GameController {
                 // Game Continues
                 input.value = "";
                 input.focus();
-                if(data.status !== 'warning') this.ui.playClick();
+                if(data.status !== 'warning') {
+                    // UPDATED: Trigger feedback effect immediately on wrong guess
+                    // won=false (show lose assets), loop=false (play sound once)
+                    this.ui.triggerGameEffect(false, false);
+                }
             }
         } catch (error) {
             this.ui.showToast("Error sending guess", "error");
@@ -481,8 +485,8 @@ class GameController {
 
         this.$('start-button').innerText = "Try again";
         
-        // Trigger Win/Lose effects
-        this.ui.triggerEndGameEffect(won);
+        // Trigger Win/Lose effects (Looping music for end of game)
+        this.ui.triggerGameEffect(won, true);
         
         this.gameActive = false;
     }
