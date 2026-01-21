@@ -29,6 +29,11 @@ A high-performance, secure number guessing game built with Python (Flask) and Su
 * **Database:** PostgreSQL (Supabase) via PL/pgSQL RPC
 * **Security:** Cryptography (Fernet), Flask-Limiter
 * **Frontend:** Vanilla JS (Event Delegation Pattern), CSS3 Variables
+* **Asynchronous Workers:** Redis Queue (RQ)
+
+## ☁️ Deployment (Render)
+
+This project uses a **Single-Container Deployment Strategy** to stay within the Render Free Tier. We run both the Web Server and the Background Worker in the same instance.
 
 ## 💻 Local Installation
 
