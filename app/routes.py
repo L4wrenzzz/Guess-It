@@ -394,3 +394,8 @@ def handle_logout() -> Response:
     logout_user()
     session.clear()
     return jsonify({'success': True})
+
+@main_blueprint.route('/.well-known/discord')
+def discord_verification():
+    verification_content = "dh=2c898ebdc566310e3a6f5ff13572fbfe28645a00" 
+    return Response(verification_content, mimetype='text/plain')
