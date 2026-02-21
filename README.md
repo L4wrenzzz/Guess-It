@@ -8,7 +8,6 @@ A high-performance, secure number guessing game built with Python (Flask) and Su
 - **Hosting:** Render
 - **Database:** Supabase (PostgreSQL)
 - **Caching:** Redis (with fallback to memory)
-- **Monitoring:** Blackfire.io Profiling
 
 ## 🚀 Features
 
@@ -66,4 +65,4 @@ Want to run this locally? Follow these steps:
 
 ## 🧪 Testing
 
-This project uses `pytest` for unit testing and blackfire extension for monitoring performance.
+This project uses `pytest` for unit testing.

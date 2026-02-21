@@ -155,7 +155,6 @@ def add_security_headers(response: Response) -> Response:
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
         "font-src 'self' https://fonts.gstatic.com; "
         "script-src 'self' 'unsafe-inline'; "
-        "frame-src 'self' https://blackfire.io;"
     )
     response.headers['X-Content-Type-Options'] = 'nosniff'
     response.headers['X-Frame-Options'] = 'SAMEORIGIN'
